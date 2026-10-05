@@ -73,7 +73,8 @@ import { LIBRARY_VERSION, type Version } from './version.js';
 export interface EcuOptions {
   /**
    * Silence timeout for each read, in milliseconds. Defaults to 100, as in
-   * libcomm14cux.
+   * libcomm14cux. After a {@link TimeoutError} or {@link ProtocolError}, the
+   * next operation first waits for the line to be quiet for twice this long.
    */
   readTimeoutMs?: number;
 }

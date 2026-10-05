@@ -170,6 +170,67 @@ describe('SimulatedTransport', () => {
     expect(() => t.loadRom(new Uint8Array(10))).toThrow(RangeError);
   });
 
+  describe('command timeout', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // Latches the block at 0x0040 for a 2-byte read.
+    async function latched() {
+      const t = await opened();
+
+      t.memory.set([1, 2, 3, 4], 0x0040);
+      await t.write(bytes(0x01 << 2, 0x01));
+      await t.read(2, 1);
+
+      return t;
+    }
+
+    it('waits up to 150 ms for the rest of a command', async () => {
+      const t = await latched();
+
+      t.memory.set([7, 8], 0x0080);
+      await t.write(bytes(0x01 << 2));
+      vi.advanceTimersByTime(150);
+      await t.write(bytes(0x02));
+      await t.read(2, 1);
+      await t.write(bytes(0xc0));
+
+      expect([...(await t.read(2, 1))]).toEqual([7, 8]);
+    });
+
+    it('drops a half-received coarse address after more than 150 ms, keeping the latched block', async () => {
+      const t = await latched();
+
+      // A first coarse byte for a 1-byte read elsewhere, then silence.
+      await t.write(bytes(0x00 << 2));
+      await t.read(1, 1);
+      vi.advanceTimersByTime(151);
+      await t.write(bytes(0xc1));
+
+      // As in the firmware, the length comes from the latest first byte.
+      expect([...(await t.read(1, 1))]).toEqual([2]);
+      await expect(t.read(1, 1)).rejects.toThrow(TimeoutError);
+    });
+
+    it('drops a write command that is still waiting for its value', async () => {
+      const t = await latched();
+
+      await t.write(bytes(0x83));
+      await t.read(1, 1);
+      vi.advanceTimersByTime(151);
+      // Taken as the start of a new coarse address, not as the value.
+      await t.write(bytes(0x55));
+
+      expect([...(await t.read(1, 1))]).toEqual([0x55]);
+      expect(t.memory[0x0043]).toBe(4);
+    });
+  });
+
   it('records every byte written', async () => {
     const t = await opened();
 
