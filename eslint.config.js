@@ -4,6 +4,8 @@ import prettierConfig from 'eslint-config-prettier';
 import prettierPlugin from 'eslint-plugin-prettier';
 import tseslint from 'typescript-eslint';
 import vitestPlugin from '@vitest/eslint-plugin';
+import jsdocPlugin from 'eslint-plugin-jsdoc';
+import tsdocPlugin from 'eslint-plugin-tsdoc';
 
 const paddingLines = [
   'error',
@@ -72,6 +74,41 @@ export default [
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/switch-exhaustiveness-check': 'error',
       '@typescript-eslint/no-unnecessary-condition': 'error',
+    },
+  },
+  {
+    // Documentation rules for the library's own source (not tests).
+    files: ['src/**/*.ts'],
+    ignores: ['src/**/*.test.ts'],
+    plugins: { jsdoc: jsdocPlugin, tsdoc: tsdocPlugin },
+    rules: {
+      'tsdoc/syntax': 'error',
+      'jsdoc/require-jsdoc': [
+        'error',
+        {
+          publicOnly: true,
+          require: {
+            FunctionDeclaration: true,
+            ClassDeclaration: true,
+            MethodDefinition: true,
+          },
+          contexts: [
+            'TSInterfaceDeclaration',
+            'TSTypeAliasDeclaration',
+            'TSEnumDeclaration',
+            'VariableDeclaration',
+            'PropertyDefinition',
+            'TSPropertySignature',
+          ],
+          checkConstructors: true,
+        },
+      ],
+      'jsdoc/require-param': ['error', { checkDestructured: false }],
+      'jsdoc/require-param-description': 'error',
+      'jsdoc/require-returns': 'error',
+      'jsdoc/require-returns-description': 'error',
+      'jsdoc/check-param-names': 'error',
+      'jsdoc/require-throws': 'error',
     },
   },
   {

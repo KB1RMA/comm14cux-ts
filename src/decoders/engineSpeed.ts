@@ -5,7 +5,15 @@
 
 import { InvalidReadingError } from '../errors.js';
 
-/** Converts a crank pulse width to RPM (`7500000 / pulseWidth`, truncated). */
+/**
+ * Converts a crank pulse width to engine speed (`7500000 / pulseWidth`,
+ * truncated).
+ *
+ * @param pulseWidth - Pulse width in ECU timer ticks. Must not be 0.
+ * @returns Engine speed in revolutions per minute.
+ * @throws {@link InvalidReadingError} if `pulseWidth` is 0. libcomm14cux
+ * divides by zero here, which is undefined behaviour in C.
+ */
 export function pulseWidthToRpm(pulseWidth: number): number {
   if (pulseWidth === 0) {
     // libcomm14cux divides by zero here (undefined behaviour in C).
@@ -16,8 +24,12 @@ export function pulseWidthToRpm(pulseWidth: number): number {
 }
 
 /**
- * Engine speed from the filtered pulse width. 0xFFFF is the ECU's initial
- * value with ignition on and the engine stopped, and means 0 RPM.
+ * Decodes the engine speed from the filtered pulse width. 0xFFFF is the ECU's
+ * initial value with the ignition on and the engine stopped, and means 0 RPM.
+ *
+ * @param pulseWidth - The filtered pulse width, 0 to 0xFFFF.
+ * @returns Engine speed in revolutions per minute.
+ * @throws {@link InvalidReadingError} if `pulseWidth` is 0.
  */
 export function decodeEngineRpm(pulseWidth: number): number {
   return pulseWidth === 0xffff ? 0 : pulseWidthToRpm(pulseWidth);

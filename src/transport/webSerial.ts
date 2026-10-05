@@ -5,6 +5,9 @@ import { BAUD } from '../constants.js';
 import { NotConnectedError, TimeoutError } from '../errors.js';
 import type { Transport } from './types.js';
 
+/**
+ * Options for {@link WebSerialTransport}.
+ */
 export interface WebSerialTransportOptions {
   /** 7812 for standard ECUs; 15625 for modified double-speed firmware. */
   baudRate?: number;
@@ -19,11 +22,22 @@ export class WebSerialTransport implements Transport {
   #pending: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
   #leftover: Uint8Array = new Uint8Array(0);
 
+  /**
+   * Wraps a serial port. The port is not opened until {@link WebSerialTransport.open}.
+   *
+   * @param port - A port the user has granted access to, from
+   * `navigator.serial.requestPort()`.
+   * @param options - Optional settings.
+   */
   constructor(port: SerialPort, options: WebSerialTransportOptions = {}) {
     this.#port = port;
     this.#baudRate = options.baudRate ?? BAUD;
   }
 
+  /**
+   * Opens the port at the configured baud rate, 8N1 with no flow control.
+   * Does nothing if already open.
+   */
   async open(): Promise<void> {
     if (this.#reader) {
       return;
@@ -40,6 +54,10 @@ export class WebSerialTransport implements Transport {
     this.#writer = this.#port.writable?.getWriter();
   }
 
+  /**
+   * Cancels any pending read, releases the stream locks and closes the port.
+   * Does nothing if not open.
+   */
   async close(): Promise<void> {
     const reader = this.#reader;
     const writer = this.#writer;
@@ -59,6 +77,12 @@ export class WebSerialTransport implements Transport {
     await this.#port.close();
   }
 
+  /**
+   * Writes bytes to the port.
+   *
+   * @param data - Bytes to send.
+   * @throws {@link NotConnectedError} if the port is not open.
+   */
   async write(data: Uint8Array): Promise<void> {
     if (!this.#writer) {
       throw new NotConnectedError('Serial port is not open');
@@ -67,6 +91,16 @@ export class WebSerialTransport implements Transport {
     await this.#writer.write(data);
   }
 
+  /**
+   * Reads exactly `length` bytes, assembling them from as many chunks as needed.
+   * Surplus bytes are kept for the next call.
+   *
+   * @param length - Number of bytes wanted.
+   * @param timeoutMs - Longest silence to wait for more data, in milliseconds.
+   * @returns Exactly `length` bytes.
+   * @throws {@link TimeoutError} if no data arrives within `timeoutMs`.
+   * @throws {@link NotConnectedError} if the port is not open or the stream ends.
+   */
   async read(length: number, timeoutMs: number): Promise<Uint8Array> {
     const reader = this.#reader;
 

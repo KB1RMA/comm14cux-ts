@@ -6,8 +6,16 @@
 import { InvalidReadingError } from '../errors.js';
 
 /**
- * Reverses the quadratic the ECU applies to the battery-voltage ADC count,
+ * Reverses the quadratic the ECU applies to the battery voltage ADC count,
  * then maps the count linearly to volts.
+ *
+ * @param stored - The 16-bit value read from 0x0055.
+ * @param a - First coefficient (a byte).
+ * @param b - Second coefficient (a byte).
+ * @param c - Third coefficient (16 bits).
+ * @returns The main relay voltage in volts.
+ * @throws {@link InvalidReadingError} if the coefficients cannot produce a real
+ * result for `stored`.
  */
 export function decodeMainVoltage(
   stored: number,

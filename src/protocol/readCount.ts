@@ -5,8 +5,13 @@
 import { ReadCount, ReadCountValue } from '../constants.js';
 
 /**
- * Number of bytes to request in the next single read, given the total being
- * read and how many have been read so far (`c14cux_getByteCountForNextRead`).
+ * Chooses how many bytes to request in the next single read
+ * (`c14cux_getByteCountForNextRead`).
+ *
+ * @param total - Total bytes being read over all requests.
+ * @param alreadyRead - Bytes read so far.
+ * @returns 512, 400, 100, 80 or 16 if that many bytes remain, otherwise the
+ * exact remainder.
  */
 export function nextReadCount(total: number, alreadyRead: number): number {
   const bytesLeft = total - alreadyRead;
@@ -27,9 +32,12 @@ export function nextReadCount(total: number, alreadyRead: number): number {
 }
 
 /**
- * The 5-bit length code that the ECU expects for a read of `length` bytes.
- * Length 0 (used for writes) encodes as 0. Returns `undefined` for a length
- * the ECU cannot produce in a single read.
+ * Gives the 5-bit length code that the ECU expects for a read of `length`
+ * bytes.
+ *
+ * @param length - Number of bytes to read, or 0 for the write form of a command.
+ * @returns The code, or `undefined` if the ECU cannot produce that many bytes
+ * in a single read (valid lengths are 1 to 16, 80, 100, 400 and 512).
  */
 export function lengthCode(length: number): number | undefined {
   if (length === 0) {

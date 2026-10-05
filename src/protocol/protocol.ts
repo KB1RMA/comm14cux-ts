@@ -25,6 +25,12 @@ export class Protocol {
   #lastReadQuantity = 0;
   #cancelRead = false;
 
+  /**
+   * Creates a protocol handler.
+   *
+   * @param transport - The link to the ECU.
+   * @param timeoutMs - Silence timeout for each read, in milliseconds.
+   */
   constructor(transport: Transport, timeoutMs = DEFAULT_READ_TIMEOUT_MS) {
     this.#transport = transport;
     this.#timeoutMs = timeoutMs;
@@ -47,7 +53,18 @@ export class Protocol {
     this.#lastReadQuantity = 0;
   }
 
-  /** Reads `length` bytes starting at `addr`. */
+  /**
+   * Reads `length` bytes starting at `addr`, splitting long reads into chunks
+   * (`c14cux_readMem`).
+   *
+   * @param addr - First address to read, 0 to 0xFFFF.
+   * @param length - Number of bytes to read. `addr + length` must not exceed 0x10000.
+   * @returns The bytes read.
+   * @throws {@link RangeError} if the address or length is out of range.
+   * @throws {@link ReadCancelledError} if {@link Protocol.cancelRead} was called.
+   * @throws {@link ProtocolError} if an echo is wrong.
+   * @throws {@link TimeoutError} if the ECU stops responding.
+   */
   async readMem(addr: number, length: number): Promise<Uint8Array> {
     assertUint16(addr, 'address');
     assertUint16(length, 'length');
@@ -99,7 +116,15 @@ export class Protocol {
     return result;
   }
 
-  /** Writes one byte to ECU memory. */
+  /**
+   * Writes one byte to ECU memory (`c14cux_writeMem`).
+   *
+   * @param addr - Address to write, 0 to 0xFFFF.
+   * @param value - Byte to write, 0 to 255.
+   * @throws {@link RangeError} if the address or value is out of range.
+   * @throws {@link ProtocolError} if an echo is wrong.
+   * @throws {@link TimeoutError} if the ECU stops responding.
+   */
   async writeMem(addr: number, value: number): Promise<void> {
     assertUint16(addr, 'address');
 
@@ -114,8 +139,14 @@ export class Protocol {
   }
 
   /**
-   * Sets the coarse address (and, for reads, the length) for the next
-   * command. A `length` of 0 selects the write form.
+   * Sets the coarse address (and, for reads, the length) for the next command
+   * (`c14cux_setCoarseAddr`).
+   *
+   * @param addr - Address of the read or write, 0 to 0xFFFF.
+   * @param length - Bytes the following read will return, or 0 for a write.
+   * @throws {@link RangeError} if `length` is not one the ECU supports.
+   * @throws {@link ProtocolError} if an echo is wrong.
+   * @throws {@link TimeoutError} if the ECU stops responding.
    */
   async setCoarseAddr(addr: number, length: number): Promise<void> {
     const code = lengthCode(length);

@@ -5,7 +5,12 @@
 
 const FULLY_CLOSED = 180;
 
-/** Idle bypass motor position as a fraction (0..1) of the widest opening. */
+/**
+ * Decodes the idle bypass motor position. 180 counts is fully closed.
+ *
+ * @param raw - The byte read from 0x006D.
+ * @returns Position as a fraction from 0 (closed) to 1 (widest opening).
+ */
 export function decodeIdleBypassPosition(raw: number): number {
   return (FULLY_CLOSED - Math.min(raw, FULLY_CLOSED)) / FULLY_CLOSED;
 }

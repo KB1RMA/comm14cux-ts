@@ -13,6 +13,9 @@ import {
 import { InvalidReadingError } from '../errors.js';
 import { pulseWidthToRpm } from './engineSpeed.js';
 
+/**
+ * Where a fuel map lives in ECU memory.
+ */
 export interface FuelMapLocation {
   /** Address of the 128-byte map; the 2-byte adjustment factor follows it. */
   offset: number;
@@ -36,16 +39,30 @@ const NEW_MAPS = [
   MemoryOffset.NewFuelMap5,
 ];
 
+/**
+ * A {@link DataOffsetRev} that has been determined (not `Unset`).
+ */
 export type KnownDataOffsetRev = Exclude<DataOffsetRev, 0>;
 
-/** Rejects a fuel map id outside 0..5. */
+/**
+ * Rejects a fuel map id outside 0 to 5.
+ *
+ * @param id - The fuel map id to check.
+ * @throws {@link RangeError} if `id` is not an integer from 0 to 5.
+ */
 export function assertFuelMapId(id: number): void {
   if (!Number.isInteger(id) || id < 0 || id > 5) {
     throw new RangeError(`Invalid fuel map id: ${id}`);
   }
 }
 
-/** Where fuel map `id` (0..5) lives for the given ROM data layout. */
+/**
+ * Finds where a fuel map lives for the given ROM data layout.
+ *
+ * @param id - Map id, 0 to 5 (checked by {@link assertFuelMapId}).
+ * @param revision - The ROM's data layout.
+ * @returns The map's address and its row scaler's address.
+ */
 export function fuelMapLocation(
   id: number,
   revision: KnownDataOffsetRev,
@@ -64,7 +81,13 @@ export function fuelMapLocation(
   return { offset, scalerOffset: offset + FUEL_MAP_ROW_SCALER_OFFSET };
 }
 
-/** The current fuel map id (0..5). */
+/**
+ * Validates the current fuel map id.
+ *
+ * @param id - The byte read from 0x202C.
+ * @returns The map id, 0 to 5.
+ * @throws {@link InvalidReadingError} if `id` is above 5.
+ */
 export function decodeCurrentFuelMap(id: number): number {
   if (id > 5) {
     throw new InvalidReadingError(`Invalid fuel map id: ${id}`);
@@ -73,8 +96,17 @@ export function decodeCurrentFuelMap(id: number): number {
   return id;
 }
 
+/**
+ * A position within the fuel map and its interpolation weighting.
+ */
 export interface FuelMapIndex {
+  /**
+   * The row or column index.
+   */
   index: number;
+  /**
+   * The weighting (0 to 15) used to interpolate toward the next row or column.
+   */
   weighting: number;
 }
 
@@ -88,21 +120,48 @@ function decodeIndex(byte: number, limit: number, what: string): FuelMapIndex {
   return { index, weighting: byte & 0x0f };
 }
 
-/** High nibble is the row index, low nibble the row weighting. */
+/**
+ * Decodes the row index byte: the high nibble is the row, the low nibble the
+ * weighting.
+ *
+ * @param byte - The byte read from 0x005B.
+ * @returns The row index (0 to 7) and weighting.
+ * @throws {@link InvalidReadingError} if the row index is 8 or more.
+ */
 export const decodeFuelMapRowIndex = (byte: number): FuelMapIndex =>
   decodeIndex(byte, FUEL_MAP_ROWS, 'row');
 
-/** High nibble is the column index, low nibble the column weighting. */
+/**
+ * Decodes the column index byte: the high nibble is the column, the low nibble
+ * the weighting.
+ *
+ * @param byte - The byte read from 0x005C.
+ * @returns The column index (0 to 15) and weighting.
+ * @throws {@link InvalidReadingError} if the column index is 16 or more.
+ */
 export const decodeFuelMapColumnIndex = (byte: number): FuelMapIndex =>
   decodeIndex(byte, FUEL_MAP_COLUMNS, 'column');
 
-/** Address of column `column`'s pulse width in the RPM table. */
+/**
+ * Gives the address of one entry in the RPM table.
+ *
+ * @param column - Fuel map column, 0 to 15.
+ * @returns The address of the column's two-byte pulse width.
+ */
 export const rpmTableEntryAddress = (column: number): number =>
   MemoryOffset.RPMTable + column * 4;
 
-/** Slot in the RPM table result for the pulse width read for `column`. */
+/**
+ * Gives the slot in the result array for an RPM table column. The C library
+ * stores column 0 last.
+ *
+ * @param column - Fuel map column, 0 to 15.
+ * @returns The index in the result array.
+ */
 export const rpmTableSlot = (column: number): number =>
   FUEL_MAP_COLUMNS - column - 1;
 
-/** Converts one RPM table pulse width to RPM. */
+/**
+ * Converts one RPM table pulse width to RPM; see {@link pulseWidthToRpm}.
+ */
 export const decodeRpmTableEntry = pulseWidthToRpm;

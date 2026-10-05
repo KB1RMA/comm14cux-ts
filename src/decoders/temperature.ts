@@ -23,7 +23,14 @@ export const TEMPERATURE_ADC_TO_DEGREES_F: readonly number[] = [
   -4, -5, -5, -7, -7, -7, -9, -9, -9, -11, -11, -11, -13, -13, -13,
 ];
 
-/** Converts a coolant or fuel temperature sensor ADC count to °F. */
+/**
+ * Converts a coolant or fuel temperature sensor ADC count to degrees
+ * Fahrenheit.
+ *
+ * @param adcCount - The byte read from the sensor location, 0 to 255.
+ * @returns Temperature in degrees Fahrenheit.
+ * @throws {@link InvalidReadingError} if `adcCount` is not 0 to 255.
+ */
 export function decodeTemperatureF(adcCount: number): number {
   const degrees = TEMPERATURE_ADC_TO_DEGREES_F[adcCount];
 

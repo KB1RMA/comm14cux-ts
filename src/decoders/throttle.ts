@@ -7,7 +7,12 @@ import { InvalidReadingError } from '../errors.js';
 
 const MAX_READING = 1023;
 
-/** Rejects a raw throttle ADC reading above the 10-bit maximum. */
+/**
+ * Rejects a raw throttle reading above the 10-bit maximum.
+ *
+ * @param raw - The raw reading.
+ * @throws {@link InvalidReadingError} if `raw` is above 1023.
+ */
 export function assertThrottleReading(raw: number): void {
   if (raw > MAX_READING) {
     throw new InvalidReadingError(`Throttle reading out of range: ${raw}`);
@@ -15,8 +20,13 @@ export function assertThrottleReading(raw: number): void {
 }
 
 /**
- * Throttle position as a fraction (0..1). `minimum` is 0 for an absolute
- * reading, or the ECU's stored minimum for a corrected reading.
+ * Decodes the throttle position.
+ *
+ * @param raw - The 10-bit reading, 0 to 1023.
+ * @param minimum - 0 for an absolute reading, or the ECU's stored minimum for a
+ * corrected reading.
+ * @returns Position as a fraction from 0 (closed) to 1 (wide open).
+ * @throws {@link InvalidReadingError} if `raw` is above 1023.
  */
 export function decodeThrottlePosition(raw: number, minimum: number): number {
   assertThrottleReading(raw);

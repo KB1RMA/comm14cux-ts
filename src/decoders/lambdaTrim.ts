@@ -3,12 +3,22 @@
 // Copyright (C) Colin Bourassa. Licensed under the GNU GPL v3.
 // Ported to TypeScript and modified for comm14cux-ts, 2026.
 
-/** Lambda fueling trim in counts (-256..255) from the raw 16-bit value. */
+/**
+ * Decodes a lambda fueling trim. A larger number means more fuel.
+ *
+ * @param raw - The 16-bit value read from the trim location.
+ * @returns Trim in counts, from -256 to 255.
+ */
 export function decodeLambdaTrim(raw: number): number {
   return Math.trunc(raw / 0x80) - 0x100;
 }
 
-/** MAF CO trim voltage from the raw 16-bit long-term trim (even bank). */
+/**
+ * Decodes the MAF CO trim voltage from the even-bank long-term trim value.
+ *
+ * @param raw - The 16-bit value read from 0x0046.
+ * @returns Voltage in volts.
+ */
 export function decodeCoTrimVoltage(raw: number): number {
   return (5.0 * (raw >> 7)) / 1024.0;
 }

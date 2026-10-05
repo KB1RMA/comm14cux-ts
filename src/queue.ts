@@ -10,6 +10,13 @@ export class CommandQueue {
   #tail: Promise<unknown> = Promise.resolve();
   #closed = false;
 
+  /**
+   * Queues a task and runs it once all earlier tasks have settled.
+   *
+   * @param task - Function that performs the work.
+   * @returns The task's result. If the task rejects, only this call rejects.
+   * @throws {@link QueueClosedError} if the queue is closed before the task starts.
+   */
   run<T>(task: () => Promise<T>): Promise<T> {
     if (this.#closed) {
       return Promise.reject(new QueueClosedError('Queue is closed'));
@@ -28,7 +35,10 @@ export class CommandQueue {
     return result;
   }
 
-  /** Rejects tasks that have not started; a running task is left to finish. */
+  /**
+   * Closes the queue. Tasks that have not started are rejected; a task already
+   * running is left to finish.
+   */
   close(): void {
     this.#closed = true;
   }

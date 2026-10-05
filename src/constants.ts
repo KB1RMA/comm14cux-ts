@@ -114,36 +114,60 @@ export const Gear = {
   DriveOrReverse: 2,
   ManualGearbox: 3,
 } as const;
+/**
+ * Union of the {@link Gear} values.
+ */
 export type Gear = (typeof Gear)[keyof typeof Gear];
 
 /** The two engine banks. */
 export const Bank = { Odd: 0, Even: 1 } as const;
+/**
+ * Union of the {@link Bank} values.
+ */
 export type Bank = (typeof Bank)[keyof typeof Bank];
 
 /** Types of lambda trim for fueling. */
 export const LambdaTrimType = { ShortTerm: 0, LongTerm: 1 } as const;
+/**
+ * Union of the {@link LambdaTrimType} values.
+ */
 export type LambdaTrimType =
   (typeof LambdaTrimType)[keyof typeof LambdaTrimType];
 
 /** Fueling feedback modes. */
 export const FeedbackMode = { ClosedLoop: 0, OpenLoop: 1 } as const;
+/**
+ * Union of the {@link FeedbackMode} values.
+ */
 export type FeedbackMode = (typeof FeedbackMode)[keyof typeof FeedbackMode];
 
 /** The two means of reading a value from the MAF. */
 export const AirflowType = { Direct: 0, Linearized: 1 } as const;
+/**
+ * Union of the {@link AirflowType} values.
+ */
 export type AirflowType = (typeof AirflowType)[keyof typeof AirflowType];
 
 /** The two methods of interpreting a throttle position. */
 export const ThrottlePosType = { Absolute: 0, Corrected: 1 } as const;
+/**
+ * Union of the {@link ThrottlePosType} values.
+ */
 export type ThrottlePosType =
   (typeof ThrottlePosType)[keyof typeof ThrottlePosType];
 
 /** Revisions of the ROM data layout (`c14cux_data_offset_rev`). */
 export const DataOffsetRev = { Unset: 0, RevA: 1, RevB: 2, RevC: 3 } as const;
+/**
+ * Union of the {@link DataOffsetRev} values.
+ */
 export type DataOffsetRev = (typeof DataOffsetRev)[keyof typeof DataOffsetRev];
 
 /** States of the carbon canister purge valve. */
 export const PurgeValveState = { Closed: 0, Toggling: 1, Open: 2 } as const;
+/**
+ * Union of the {@link PurgeValveState} values.
+ */
 export type PurgeValveState =
   (typeof PurgeValveState)[keyof typeof PurgeValveState];
 

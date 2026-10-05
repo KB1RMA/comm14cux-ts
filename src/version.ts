@@ -3,8 +3,17 @@
 
 /** Major/minor/patch version of this library (`c14cux_version`). */
 export interface Version {
+  /**
+   * Major version number.
+   */
   major: number;
+  /**
+   * Minor version number.
+   */
   minor: number;
+  /**
+   * Patch version number.
+   */
   patch: number;
 }
 

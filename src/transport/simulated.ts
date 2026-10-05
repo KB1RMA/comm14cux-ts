@@ -57,11 +57,21 @@ export class SimulatedTransport implements Transport {
   #lengthCode = 0;
   #writeAddr = 0;
 
+  /**
+   * Whether the transport is open.
+   *
+   * @returns `true` between {@link SimulatedTransport.open} and {@link SimulatedTransport.close}.
+   */
   get isOpen(): boolean {
     return this.#open;
   }
 
-  /** Places a 16 KiB firmware image at 0xC000..0xFFFF. */
+  /**
+   * Places a 16 KiB firmware image at 0xC000 to 0xFFFF.
+   *
+   * @param image - The ROM image, exactly 0x4000 bytes.
+   * @throws {@link RangeError} if the image is the wrong size.
+   */
   loadRom(image: Uint8Array): void {
     if (image.length !== DataSize.ROM) {
       throw new RangeError(`ROM image must be ${DataSize.ROM} bytes`);
@@ -70,12 +80,22 @@ export class SimulatedTransport implements Transport {
     this.memory.set(image, MemoryOffset.ROMAddress);
   }
 
+  /**
+   * Opens the simulated link.
+   *
+   * @returns A promise that resolves immediately.
+   */
   open(): Promise<void> {
     this.#open = true;
 
     return Promise.resolve();
   }
 
+  /**
+   * Closes the simulated link and discards any pending ECU output.
+   *
+   * @returns A promise that resolves immediately.
+   */
   close(): Promise<void> {
     this.#open = false;
     this.#state = 'idle';
@@ -85,6 +105,14 @@ export class SimulatedTransport implements Transport {
     return Promise.resolve();
   }
 
+  /**
+   * Delivers bytes to the simulated ECU, which may queue a reply.
+   *
+   * @param data - Bytes to send.
+   * @returns A promise that resolves once the bytes are delivered.
+   * @throws {@link NotConnectedError} if the transport is closed.
+   * @throws Error if {@link SimulatedTransport.failWrites} is set.
+   */
   write(data: Uint8Array): Promise<void> {
     if (!this.#open) {
       return Promise.reject(new NotConnectedError('Transport is not open'));
@@ -102,6 +130,15 @@ export class SimulatedTransport implements Transport {
     return Promise.resolve();
   }
 
+  /**
+   * Takes bytes from the simulated ECU's reply.
+   *
+   * @param length - Number of bytes wanted.
+   * @param _timeoutMs - Ignored; the simulation answers immediately.
+   * @returns Exactly `length` bytes.
+   * @throws {@link TimeoutError} if the ECU has not produced that many bytes.
+   * @throws {@link NotConnectedError} if the transport is closed.
+   */
   read(length: number, _timeoutMs: number): Promise<Uint8Array> {
     if (!this.#open) {
       return Promise.reject(new NotConnectedError('Transport is not open'));

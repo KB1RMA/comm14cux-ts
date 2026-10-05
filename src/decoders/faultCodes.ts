@@ -32,6 +32,10 @@ const FAULT_BITS = [
   [5, 7, 'ramChecksumFailure'],
 ] as const;
 
+/**
+ * Name of a fault flag in {@link FaultCodes}, taken from the field names of
+ * the C `c14cux_faultcodes` struct.
+ */
 export type FaultCodeName = (typeof FAULT_BITS)[number][2];
 
 /** Fault code flags (`c14cux_faultcodes`); `true` means the fault is set. */
@@ -40,7 +44,12 @@ export type FaultCodes = Record<FaultCodeName, boolean>;
 /** Number of bytes in the fault code block at 0x0049. */
 export const FAULT_CODE_BLOCK_SIZE = 6;
 
-/** Decodes the six fault code bytes into named flags. */
+/**
+ * Decodes the fault code block into named flags. Spare bits are ignored.
+ *
+ * @param bytes - The six bytes read from 0x0049.
+ * @returns A flag for each fault; `true` means the fault is set.
+ */
 export function decodeFaultCodes(bytes: Uint8Array): FaultCodes {
   const codes = {} as FaultCodes;
 
