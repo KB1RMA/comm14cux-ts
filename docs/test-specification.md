@@ -167,6 +167,28 @@ As in C, any direction other than 0 closes the valve. The C `c14cux_driveIdleAir
 
 Every public `Ecu` call is queued (the C library locks only inside `readMem`/`writeMem`), so compound operations such as `runFuelPump` cannot be interleaved with another call.
 
+## 7. Acceptance suite
+
+`test/acceptance/` checks whole user journeys through the stack a browser application uses: `Ecu` → `WebSerialTransport` → `VirtualSerialPort` → `SimulatedTransport`. The unit tests above check each behaviour in isolation against an instant, in-memory link. This suite checks that the pieces work together over a link that takes time.
+
+- **Runs:** `npm run test:acceptance` (against `src/`) and `npm run test:acceptance:dist` (builds, then runs against `dist/`). CI runs the dist form, so what is tested is what would be published. Tests import `'comm14cux-ts'`; `vitest.acceptance.config.ts` points that at the sources or at `dist/`.
+- **Virtual cable** (`support/virtualSerialPort.ts`): a fake `SerialPort` that behaves like a USB serial adapter. Each byte takes 10 bit-times on the wire at the ECU's baud rate. The ECU replies after a short delay. The adapter passes bytes to the host in packets of up to 62, after a 16 ms latency timer. It also models the wrong baud rate (the ECU hears nothing), the cable being pulled (`NetworkError`, as in Chrome), the ECU being switched off and on, and one late reply. `SerialPort.close()` rejects while a stream is locked, as in the browser.
+- **Virtual time** (`support/clock.ts`): only `setTimeout`, `clearTimeout` and `Date` are faked. `settle()` advances time one timer at a time until the operation finishes, and reports a deadlock if nothing is left scheduled. Durations are asserted in virtual time; a full ROM dump takes about 22 s at 7812 baud.
+- **Fixtures** (`fixtures/`): synthetic Rev A, B and C ROM images; RAM snapshots for key-on, warm idle and cruising; fault-code blocks. Each comes with its expected readings, worked out by hand from §5. No real ROM data is included.
+
+| Journey | File |
+|---|---|
+| Opening, sharing and reopening the port; baud rates | `connection.acceptance.test.ts` |
+| Live-data dashboard polling every reading at once | `liveData.acceptance.test.ts` |
+| Identifying an ECU, reading its calibration, dumping and cancelling the ROM, swapping ECUs | `romIdentification.acceptance.test.ts` |
+| Reading and clearing faults; fuel pump and idle air control | `workshop.acceptance.test.ts` |
+| Ignition off, cable pulled, noisy line, slow adapters, overlapping operations | `resilience.acceptance.test.ts` |
+
+### 7.1 Known issues
+
+- **A late reply knocks the link out of step.** If the ECU answers after the read timeout, its late bytes stay in the receive buffer and are read as the answer to the next command. Every later call then fails with `ProtocolError` until the application reconnects. libcomm14cux has the same weakness: it flushes the port only when connecting. Tracked by an `it.todo` in `resilience.acceptance.test.ts`.
+- **`SimulatedTransport` has no command timeout.** The real firmware drops a half-received command after a period of silence (the `$00E7` counter in `serialPort.asm`) but keeps the latched address. The simulator waits forever, so after a failed exchange it can take the next command's first byte as the end of the old one. The resilience tests therefore allow a few retries after a fault, as an application would, instead of asserting how many calls fail.
+
 ## Not covered
 
 - Real-hardware tests (FTDI cable, timing). These belong in a manual checklist, not CI.

@@ -71,6 +71,29 @@ jobs:
           report_type: test_results
           files: ./test-reports/junit.xml
 
+  acceptance:
+    name: Acceptance tests (built package)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run test:acceptance:dist
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          report_type: test_results
+          files: ./test-reports/acceptance-junit.xml
+          flags: acceptance
+
   build:
     name: Build
     runs-on: ubuntu-latest
