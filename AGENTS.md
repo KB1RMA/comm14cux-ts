@@ -73,6 +73,16 @@ Tests must exercise the library the way a user would: through its public API onl
 - Name each feature's tests `src/ecu.<feature>.test.ts`, and add a row to the capability map in `docs/test-specification.md` for any new public function.
 - Mark a test that pins behaviour differing from libcomm14cux with "deliberate divergence" in its name, and record the divergence in the specification.
 
+### Acceptance suite
+
+`test/acceptance/` holds user-journey tests that run the whole stack: `Ecu` → `WebSerialTransport` → a simulated serial cable → `SimulatedTransport`, under fake timers. It is run with `npm run test:acceptance` and, in CI and before a release, against the built package with `npm run test:acceptance:dist`. See §7 of `docs/test-specification.md`.
+
+- Import the library as `'comm14cux-ts'`, never by relative path, so the same tests can run against `dist/`.
+- Put helpers in `test/acceptance/support/` and data in `test/acceptance/fixtures/`. Both follow the public-API rules above.
+- Write fixture expectations as literals or spec formulas, never by calling the library.
+- ROM fixtures are synthetic. Never commit a real ECU ROM dump or data copied from one.
+- Name files `<journey>.acceptance.test.ts`. The unit-test rules above (file naming, the capability map, coverage) apply to `src/` only.
+
 When reviewing a change, flag any test that imports an internal module or bypasses the public API, and any new public behaviour without a public-API test.
 
 ## Warranty

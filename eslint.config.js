@@ -33,7 +33,7 @@ export default [
     },
   },
   {
-    files: ['src/**/*.ts', '*.ts'],
+    files: ['src/**/*.ts', 'test/**/*.ts', '*.ts'],
     plugins: {
       '@typescript-eslint': tseslint.plugin,
       prettier: prettierPlugin,
@@ -112,8 +112,9 @@ export default [
     },
   },
   {
-    // Vitest rules for unit tests colocated under src/.
-    files: ['src/**/*.test.ts'],
+    // Vitest rules for unit tests colocated under src/ and for the
+    // acceptance suite and its helpers under test/.
+    files: ['src/**/*.test.ts', 'test/**/*.ts'],
     plugins: { vitest: vitestPlugin },
     languageOptions: {
       globals: { ...vitestPlugin.environments.env.globals },
