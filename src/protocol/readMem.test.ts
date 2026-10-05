@@ -124,14 +124,43 @@ describe('readMem', () => {
       expect(transport.written).toHaveLength(3);
     });
 
-    it('sends the coarse address again when addr is below the last one', async () => {
+    it('sends the coarse address again when addr is in a lower 64-byte block', async () => {
+      const { transport, protocol } = await setup();
+
+      await protocol.readMem(0x2040, 2);
+      transport.written.length = 0;
+      await protocol.readMem(0x203f, 2);
+
+      expect(transport.written).toHaveLength(3);
+    });
+
+    it('skips the coarse address for a lower addr in the same 64-byte block', async () => {
       const { transport, protocol } = await setup();
 
       await protocol.readMem(0x2010, 2);
       transport.written.length = 0;
       await protocol.readMem(0x2000, 2);
 
+      expect(transport.written).toEqual([0xc0]);
+    });
+
+    it('sends the coarse address again when an unaligned last read was in the previous block', async () => {
+      const { transport, protocol } = await setup();
+
+      await protocol.readMem(0x005f, 2);
+      transport.written.length = 0;
+      const bytes = await protocol.readMem(0x0082, 2);
+
       expect(transport.written).toHaveLength(3);
+      expect([...bytes]).toEqual([...transport.memory.slice(0x82, 0x84)]);
+    });
+
+    it('returns the right data when a multi-chunk read crosses a 64-byte block', async () => {
+      const { transport, protocol } = await setup();
+
+      const bytes = await protocol.readMem(0x0030, 32);
+
+      expect([...bytes]).toEqual([...transport.memory.slice(0x30, 0x50)]);
     });
 
     it('clears the cache after a failed read', async () => {

@@ -87,12 +87,12 @@ export class Protocol {
         const quantity = nextReadCount(length, totalRead);
         const chunkAddr = addr + totalRead;
 
-        // If the next address is within the 64-byte window created by the
-        // last coarse address, only the final command byte is needed.
+        // The ECU latches only the 64-byte-aligned block (addr >> 6), so the
+        // final command byte alone is enough only within that same block.
         const lastByteOnly =
           quantity === this.#lastReadQuantity &&
-          chunkAddr < this.#lastReadCoarseAddress + COARSE_WINDOW &&
-          this.#lastReadCoarseAddress <= chunkAddr;
+          Math.trunc(chunkAddr / COARSE_WINDOW) ===
+            Math.trunc(this.#lastReadCoarseAddress / COARSE_WINDOW);
 
         if (!lastByteOnly) {
           await this.setCoarseAddr(chunkAddr, quantity);
