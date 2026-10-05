@@ -23,30 +23,6 @@ async function running(options: BenchOptions = {}) {
   return rig;
 }
 
-/**
- * What an application's polling loop does: try a few times before giving up.
- *
- * @param attempt - One poll.
- * @param tries - How many polls to allow.
- * @returns The first successful result.
- */
-async function withRetries<T>(
-  attempt: () => Promise<T>,
-  tries: number,
-): Promise<T> {
-  let lastError: unknown;
-
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await settle(attempt());
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError;
-}
-
 describe('ignition switched off', () => {
   it('times out after the 100 ms silence timeout, then works when switched back on', async () => {
     const { ecu, port } = await running();
@@ -108,7 +84,7 @@ describe('noisy line', () => {
     simulator.corruptNextEcho = true;
 
     await expect(settle(ecu.getEngineRPM())).rejects.toThrow(ProtocolError);
-    expect(await withRetries(() => ecu.getEngineRPM(), 3)).toBe(750);
+    expect(await settle(ecu.getEngineRPM())).toBe(750);
     expect(await settle(readDashboard(ecu))).toEqual(
       approximately(warmIdle.expected),
     );
@@ -122,14 +98,23 @@ describe('noisy line', () => {
     await expect(settle(ecu.dumpROM())).rejects.toThrow(TimeoutError);
 
     simulator.streamLimit = undefined;
-    expect(await withRetries(() => ecu.getCoolantTemp(), 3)).toBe(190);
+    expect(await settle(ecu.getCoolantTemp())).toBe(190);
   });
 
-  // Known issue: after a timeout, the late reply is still in the receive
-  // buffer and is read as the answer to the next command. Every later call
-  // fails with ProtocolError until the application reconnects. libcomm14cux
-  // has the same weakness (it flushes the port only when connecting).
-  it.todo('recovers after one reply arrives just too late');
+  // Deliberate divergence: libcomm14cux flushes the port only when
+  // connecting, so the late reply would be read as the answer to the next
+  // command and every later call would fail until a reconnect.
+  it('recovers after one reply arrives just too late (deliberate divergence)', async () => {
+    const { ecu, port } = await running();
+
+    port.delayNextReply(150);
+
+    await expect(settle(ecu.getEngineRPM())).rejects.toThrow(TimeoutError);
+    expect(await settle(ecu.getEngineRPM())).toBe(750);
+    expect(await settle(readDashboard(ecu))).toEqual(
+      approximately(warmIdle.expected),
+    );
+  });
 });
 
 describe('USB adapter latency', () => {

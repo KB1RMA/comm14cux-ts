@@ -7,6 +7,14 @@ import { DataSize, MemoryOffset, ReadCountValue } from '../constants.js';
 import type { Transport } from './types.js';
 
 const MEMORY_SIZE = 0x10000;
+// Silence after which the ECU abandons a half-received command. The firmware
+// counts passes of its main loop with no byte received (the $00E7 counter in
+// serialPort.asm) and gives up after 256; the length of that in ms is not
+// documented, so this value is a choice. It is longer than one echo round
+// trip through a slow USB adapter (about 125 ms with a 120 ms latency timer)
+// and shorter than the 200 ms of silence the library leaves after a failed
+// exchange at the default 100 ms read timeout.
+const COMMAND_TIMEOUT_MS = 150;
 
 type State = 'idle' | 'coarse2' | 'writeValue';
 
@@ -32,6 +40,9 @@ function lengthFromCode(code: number): number | undefined {
 /**
  * Emulates the ECU's side of the serial protocol over an in-memory 64 KiB
  * address space. Used for tests and for developing a UI without a car.
+ *
+ * Like the real ECU, it drops a half-received command after 150 ms with no
+ * byte received, keeping the latched address. Time is taken from `Date.now()`.
  */
 export class SimulatedTransport implements Transport {
   /** The ECU's address space. Tests may read and modify it directly. */
@@ -56,6 +67,7 @@ export class SimulatedTransport implements Transport {
   #latched = false;
   #lengthCode = 0;
   #writeAddr = 0;
+  #lastByteAt = 0;
 
   /**
    * Whether the transport is open.
@@ -167,6 +179,16 @@ export class SimulatedTransport implements Transport {
   }
 
   #receive(byte: number): void {
+    const now = Date.now();
+
+    if (this.#state !== 'idle' && now - this.#lastByteAt > COMMAND_TIMEOUT_MS) {
+      // Too long since the last byte: drop the half-received command. The
+      // latched address is kept, as in the firmware.
+      this.#state = 'idle';
+    }
+
+    this.#lastByteAt = now;
+
     if (this.#state === 'writeValue') {
       this.memory[this.#writeAddr] = byte;
       this.#echo(byte);
@@ -178,7 +200,6 @@ export class SimulatedTransport implements Transport {
 
     if (this.#state === 'coarse2') {
       this.#coarse = ((this.#firstCoarse & 0x03) << 14) | (byte << 6);
-      this.#lengthCode = (this.#firstCoarse >> 2) & 0x1f;
       this.#echo(byte);
       this.#state = 'idle';
       this.#latched = true;
@@ -187,10 +208,12 @@ export class SimulatedTransport implements Transport {
     }
 
     if (byte < 0x80) {
+      // The firmware takes the read length from the latest first byte, even
+      // if the second never arrives; the address changes only with both.
       this.#firstCoarse = byte;
+      this.#lengthCode = (byte >> 2) & 0x1f;
       this.#echo(byte);
       this.#state = 'coarse2';
-      this.#latched = false;
     } else if (!this.#latched) {
       // A command byte without a preceding coarse address is ignored.
     } else if ((byte & 0xc0) === 0xc0) {

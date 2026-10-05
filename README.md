@@ -76,7 +76,7 @@ interface Transport {
 ```
 
 - **`WebSerialTransport`** wraps a `SerialPort` and opens it at **7812 baud, 8N1, no flow control**. An option allows 15625 baud for ECUs running modified double-speed firmware. The default read timeout is 100 ms of silence, matching libcomm14cux.
-- **`SimulatedTransport`** emulates the ECU's side of the protocol over an in-memory address space. It is used for tests and for developing the UI without a car.
+- **`SimulatedTransport`** emulates the ECU's side of the protocol over an in-memory address space. It is used for tests and for developing the UI without a car. Like the real ECU, it drops a half-received command after a period of silence (150 ms) but keeps the latched address.
 
 Electron apps use `WebSerialTransport` as-is. Other transports (for example Node's `serialport`) can be added without changing the layers above.
 
@@ -92,7 +92,7 @@ All ECU access is memory reads and writes:
 
 - A single read returns 1–16, 80, 100, 400 or 512 bytes. Longer reads are split into chunks.
 - When the next read uses the same length and falls in the same 64-byte block as the last coarse address, the coarse-address step is skipped. libcomm14cux compares a 64-byte window starting at the last (unaligned) address instead, which can read from the wrong block; this library deliberately does not.
-- Any echo mismatch or timeout fails the operation and clears the coarse-address cache.
+- Any echo mismatch or timeout fails the operation and clears the coarse-address cache. Before the next operation sends anything, the library discards whatever is still arriving (for example a reply that came too late) and waits until the line has been quiet for twice the read timeout, so the ECU has also dropped any half-received command. libcomm14cux clears the receive buffer only when connecting, so one late reply puts it out of step until the port is reopened; this library deliberately recovers on its own.
 - Long reads (such as a ROM dump) can be stopped with `ecu.cancelRead()`, as in libcomm14cux.
 
 ### CommandQueue

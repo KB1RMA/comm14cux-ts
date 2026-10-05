@@ -3,7 +3,7 @@
 // Copyright (C) Colin Bourassa. Licensed under the GNU GPL v3.
 // Ported to TypeScript and modified for comm14cux-ts, 2026.
 import { DEFAULT_READ_TIMEOUT_MS } from '../constants.js';
-import { ProtocolError, ReadCancelledError } from '../errors.js';
+import { ProtocolError, ReadCancelledError, TimeoutError } from '../errors.js';
 import type { Transport } from '../transport/types.js';
 import { nextRead } from './readCount.js';
 
@@ -11,6 +11,10 @@ const ADDRESS_SPACE = 0x10000;
 const COARSE_WINDOW = 64;
 // Writes use the coarse-address command with a length code of 0.
 const WRITE_LENGTH_CODE = 0;
+// Most stale bytes to discard while resynchronising: more than the longest
+// reply (512 bytes) plus its command echoes. A line that is still talking
+// after this many is not going to fall quiet, so stop waiting for it.
+const RESYNC_BYTE_LIMIT = 1024;
 
 /**
  * Memory read and write commands over a `Transport`
@@ -25,6 +29,7 @@ export class Protocol {
   readonly #timeoutMs: number;
   #lastReadCoarseAddress = 0;
   #lastReadQuantity = 0;
+  #outOfStep = false;
 
   /**
    * Creates a protocol handler.
@@ -69,6 +74,8 @@ export class Protocol {
       throw new RangeError('Read extends past the end of the address space');
     }
 
+    await this.#resyncIfOutOfStep();
+
     const result = new Uint8Array(length);
     const multiChunk = nextRead(length, 0).count < length;
     let totalRead = 0;
@@ -105,6 +112,7 @@ export class Protocol {
       }
     } catch (error) {
       this.resetCache();
+      this.#noteFailure(error);
       throw error;
     }
 
@@ -127,10 +135,17 @@ export class Protocol {
       throw new RangeError(`Invalid value: ${value}`);
     }
 
+    await this.#resyncIfOutOfStep();
     this.resetCache();
-    await this.setCoarseAddr(addr, WRITE_LENGTH_CODE);
-    await this.#sendEchoed(0x80 | (addr & 0x3f));
-    await this.#sendEchoed(value);
+
+    try {
+      await this.setCoarseAddr(addr, WRITE_LENGTH_CODE);
+      await this.#sendEchoed(0x80 | (addr & 0x3f));
+      await this.#sendEchoed(value);
+    } catch (error) {
+      this.#noteFailure(error);
+      throw error;
+    }
   }
 
   /**
@@ -145,6 +160,37 @@ export class Protocol {
   async setCoarseAddr(addr: number, code: number): Promise<void> {
     await this.#sendEchoed(((code << 2) | (addr >> 14)) & 0xff);
     await this.#sendEchoed((addr >> 6) & 0xff);
+  }
+
+  // After a timeout or a wrong echo the host and the ECU may be out of step:
+  // a late reply can still be on its way, and the ECU may be part-way through
+  // a command. The next operation resynchronises before it sends anything.
+  #noteFailure(error: unknown): void {
+    if (error instanceof TimeoutError || error instanceof ProtocolError) {
+      this.#outOfStep = true;
+    }
+  }
+
+  // Discards everything that arrives until the line has been quiet for twice
+  // the read timeout. By then the ECU has also been sent nothing for that
+  // long, so its own command timeout has dropped any half-received command
+  // (it keeps the latched address, but the coarse-address cache is already
+  // reset). libcomm14cux flushes the port only when connecting.
+  async #resyncIfOutOfStep(): Promise<void> {
+    if (!this.#outOfStep) {
+      return;
+    }
+
+    this.#outOfStep = false;
+
+    try {
+      for (let i = 0; i < RESYNC_BYTE_LIMIT; i++) {
+        await this.#transport.read(1, this.#timeoutMs * 2);
+      }
+    } catch {
+      // Quiet at last, or the link has gone; either way, carry on. A link
+      // error will surface again on the command that follows.
+    }
   }
 
   async #sendEchoed(byte: number): Promise<void> {
