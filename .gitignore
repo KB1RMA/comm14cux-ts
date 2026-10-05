@@ -1,0 +1,9 @@
+/node_modules
+/dist
+/coverage
+/test-reports
+*.tsbuildinfo
+.DS_Store
+npm-debug.log*
+.env*
+!.env.example

@@ -1,0 +1,54 @@
+{
+	"name": "comm14cux-ts",
+	"version": "0.0.0",
+	"description": "TypeScript library for communicating with the Lucas 14CUX engine ECU over a serial port using the Web Serial API",
+	"license": "GPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/KB1RMA/comm14cux-ts.git"
+	},
+	"type": "module",
+	"packageManager": "npm@11.8.0",
+	"engines": {
+		"node": ">=24"
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src",
+		"!src/**/*.test.ts",
+		"LICENSE",
+		"README.md"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"lint": "eslint .",
+		"lint:fix": "eslint . --fix",
+		"type:check": "tsc --noEmit",
+		"test": "vitest",
+		"test:ui": "vitest --ui",
+		"test:coverage": "vitest --coverage"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.0",
+		"@types/node": "^25.9.1",
+		"@types/w3c-web-serial": "^1.0.8",
+		"@vitest/coverage-v8": "^4.1.11",
+		"@vitest/eslint-plugin": "^1.6.27",
+		"@vitest/ui": "^4.0.18",
+		"eslint": "^10.8.1",
+		"eslint-config-prettier": "^10.1.8",
+		"eslint-plugin-prettier": "^5.5.6",
+		"prettier": "^3.9.6",
+		"typescript": "^5.9.3",
+		"typescript-eslint": "^8.67.0",
+		"vitest": "^4.0.18"
+	}
+}

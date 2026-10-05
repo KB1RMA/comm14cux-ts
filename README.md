@@ -2,7 +2,7 @@
 
 TypeScript library for communicating with the Lucas 14CUX engine ECU over its serial diagnostic port, using the Web Serial API.
 
-> **Status:** early design. Nothing is implemented yet; this document describes the intended scope and architecture.
+> **Status:** pre-release. The v1 goal is to mirror the public surface of libcomm14cux as closely as possible; every function of the C library has a corresponding method on `Ecu`.
 
 ## Purpose
 
@@ -17,9 +17,25 @@ This repository is the library only. A user-facing app will be a separate packag
 
 This project is not affiliated with or endorsed by the author of libcomm14cux or RoverGauge.
 
+## Usage
+
+```ts
+import { Ecu, WebSerialTransport, AirflowType } from 'comm14cux-ts';
+
+const port = await navigator.serial.requestPort();
+const ecu = new Ecu(new WebSerialTransport(port));
+
+await ecu.connect();
+console.log(await ecu.getEngineRPM());
+console.log(await ecu.getMAFReading(AirflowType.Linearized));
+await ecu.disconnect();
+```
+
+Methods are named after the `c14cux_*` functions (`getCoolantTemp`, `getFuelMap`, `clearFaultCodes`, …). Where the C functions return `false`, these methods reject with an error from the `Comm14cuxError` family.
+
 ## Scope
 
-Planned capabilities, matching what libcomm14cux provides:
+Capabilities, matching what libcomm14cux provides:
 
 - **Live data:** engine RPM, road speed, coolant and fuel temperature, MAF reading, throttle position, short- and long-term lambda trims, main voltage, idle bypass motor position, target idle, injector pulse width, gear selection, CO trim voltage, MIL, fuel pump relay, purge valve and other output states
 - **Fault codes:** read and clear
@@ -82,7 +98,7 @@ All ECU access is memory reads and writes:
 - A single read returns 1–16, 80, 100, 400 or 512 bytes. Longer reads are split into chunks.
 - When the next read uses the same length and falls within the 64-byte window of the last coarse address, the coarse-address step is skipped, as libcomm14cux does.
 - Any echo mismatch or timeout fails the operation and clears the coarse-address cache.
-- Long reads (such as a ROM dump) accept an `AbortSignal` for cancellation.
+- Long reads (such as a ROM dump) can be stopped with `ecu.cancelRead()`, as in libcomm14cux.
 
 ### CommandQueue
 
@@ -92,18 +108,17 @@ The ECU can only handle one command sequence at a time. The queue serialises eve
 
 Decoders are pure functions that turn raw memory into values (°F/°C, mph/kph, volts, percentages). They include the ROM revision detection that selects memory offsets for older and newer firmware. Keeping them free of I/O makes them easy to unit-test against known byte sequences. `Ecu` combines the queue, protocol and decoders into the public API.
 
-### Planned layout
+### Layout
 
 ```
 src/
   transport/        Transport interface, WebSerialTransport, SimulatedTransport
-  protocol.ts       readMem / writeMem
+  protocol/         Protocol (readMem / writeMem), read chunking
   queue.ts          CommandQueue
-  decoders/         per-reading conversion functions
-  offsets.ts        memory addresses and ROM-revision tables
+  decoders/         per-reading conversion functions (pure)
+  constants.ts      memory addresses, enums, ROM-revision tables
   ecu.ts            public API
   index.ts
-test/
 ```
 
 ## Platform support
@@ -123,3 +138,18 @@ The protocol and decoding logic are derived from [libcomm14cux](https://github.c
 This project is therefore licensed under the **GNU General Public License v3.0 only** (`GPL-3.0-only`). Any application that includes this library must also be distributed under GPL-3.0-compatible terms, with its source code available.
 
 Parts of this project were written with the help of an AI assistant. The original libcomm14cux and RoverGauge projects do not accept AI-generated contributions, so nothing from this repository will be submitted to them.
+
+## Development
+
+Requires Node.js (see `.nvmrc`).
+
+```sh
+npm ci
+npm run lint          # ESLint + Prettier
+npm run type:check    # tsc --noEmit, strict
+npm test              # Vitest watch mode
+npm run test:coverage # enforces the coverage thresholds in vitest.config.ts
+npm run build         # emits dist/ with declarations and source maps
+```
+
+The behavioural specification, derived from libcomm14cux, is in [docs/test-specification.md](docs/test-specification.md).
