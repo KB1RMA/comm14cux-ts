@@ -125,6 +125,11 @@ export class Ecu {
   readonly #protocol: Protocol;
   readonly #queue = new CommandQueue();
   #connected = false;
+  // Operations are numbered when called. cancelRead() cancels the multi-chunk
+  // reads of every operation numbered up to #cancelledThrough.
+  #requested = 0;
+  #running = 0;
+  #cancelledThrough = 0;
   #promRev: KnownDataOffsetRev | undefined = undefined;
   #voltageFactorA = 0;
   #voltageFactorB = 0;
@@ -207,13 +212,19 @@ export class Ecu {
   }
 
   /**
-   * Stops a multi-chunk read after the chunk currently in flight (`c14cux_cancelRead`).
+   * Cancels every multi-chunk read requested before this call (`c14cux_cancelRead`).
+   *
+   * A read in progress stops after the chunk currently in flight; a read still
+   * waiting in the queue is cancelled before anything is sent. Each rejects
+   * with {@link ReadCancelledError}. Reads short enough for a single chunk
+   * (every getter except {@link Ecu.getFuelMap}) are not affected, and nor
+   * is anything requested after this call.
    *
    * Unlike every other method this acts immediately instead of waiting in the
-   * queue. The cancelled read rejects with {@link ReadCancelledError}.
+   * queue.
    */
   cancelRead(): void {
-    this.#protocol.cancelRead();
+    this.#cancelledThrough = this.#requested;
   }
 
   // ---- raw access ---------------------------------------------------------
@@ -231,10 +242,10 @@ export class Ecu {
    * @throws {@link TimeoutError} if the ECU stops responding.
    * @throws {@link ProtocolError} if the ECU echoes a command byte incorrectly.
    * @throws {@link RangeError} if the address or length is out of range.
-   * @throws {@link ReadCancelledError} if {@link Ecu.cancelRead} was called during the read.
+   * @throws {@link ReadCancelledError} if {@link Ecu.cancelRead} was called before the read finished.
    */
   readMem(addr: number, length: number): Promise<Uint8Array> {
-    return this.#run(() => this.#protocol.readMem(addr, length));
+    return this.#run(() => this.#read(addr, length));
   }
 
   /**
@@ -263,7 +274,7 @@ export class Ecu {
    * @throws {@link NotConnectedError} if the ECU is not connected.
    * @throws {@link TimeoutError} if the ECU stops responding.
    * @throws {@link ProtocolError} if the ECU echoes a command byte incorrectly.
-   * @throws {@link ReadCancelledError} if {@link Ecu.cancelRead} was called during the read.
+   * @throws {@link ReadCancelledError} if {@link Ecu.cancelRead} was called before the read finished.
    */
   dumpROM(): Promise<Uint8Array> {
     return this.readMem(MemoryOffset.ROMAddress, DataSize.ROM);
@@ -551,6 +562,7 @@ export class Ecu {
    * @throws {@link TimeoutError} if the ECU stops responding.
    * @throws {@link ProtocolError} if the ECU echoes a command byte incorrectly.
    * @throws {@link RangeError} if `fuelMapId` is not 0 to 5 (no I/O is performed).
+   * @throws {@link ReadCancelledError} if {@link Ecu.cancelRead} was called before the map data was read.
    */
   getFuelMap(fuelMapId: number): Promise<FuelMap> {
     try {
@@ -565,10 +577,7 @@ export class Ecu {
         await this.#determineDataOffsets(),
       );
 
-      const data = await this.#protocol.readMem(
-        location.offset,
-        DataSize.FuelMap,
-      );
+      const data = await this.#read(location.offset, DataSize.FuelMap);
       const adjustmentFactor = await this.#word(
         location.offset + DataSize.FuelMap,
       );
@@ -664,10 +673,7 @@ export class Ecu {
   getFaultCodes(): Promise<FaultCodes> {
     return this.#run(async () =>
       decodeFaultCodes(
-        await this.#protocol.readMem(
-          MemoryOffset.FaultCodes,
-          FAULT_CODE_BLOCK_SIZE,
-        ),
+        await this.#read(MemoryOffset.FaultCodes, FAULT_CODE_BLOCK_SIZE),
       ),
     );
   }
@@ -784,9 +790,7 @@ export class Ecu {
    */
   getTuneRevision(): Promise<TuneRevision> {
     return this.#run(async () =>
-      decodeTuneRevision(
-        await this.#protocol.readMem(MemoryOffset.TuneRevision, 5),
-      ),
+      decodeTuneRevision(await this.#read(MemoryOffset.TuneRevision, 5)),
     );
   }
 
@@ -848,21 +852,33 @@ export class Ecu {
   // ---- internals ----------------------------------------------------------
 
   #run<T>(task: () => Promise<T>): Promise<T> {
+    const ticket = ++this.#requested;
+
     return this.#queue.run(() => {
       if (!this.#connected) {
         return Promise.reject(new NotConnectedError('Not connected to ECU'));
       }
 
+      this.#running = ticket;
+
       return task();
     });
   }
 
+  #read(addr: number, length: number): Promise<Uint8Array> {
+    return this.#protocol.readMem(
+      addr,
+      length,
+      () => this.#running <= this.#cancelledThrough,
+    );
+  }
+
   async #byte(addr: number): Promise<number> {
-    return (await this.#protocol.readMem(addr, 1))[0] ?? 0;
+    return (await this.#read(addr, 1))[0] ?? 0;
   }
 
   async #word(addr: number): Promise<number> {
-    return be16(await this.#protocol.readMem(addr, 2));
+    return be16(await this.#read(addr, 2));
   }
 
   /**
@@ -876,7 +892,7 @@ export class Ecu {
       return this.#promRev;
     }
 
-    const firstRow = await this.#protocol.readMem(
+    const firstRow = await this.#read(
       MemoryOffset.OldFuelMap1,
       FUEL_MAP_COLUMNS,
     );

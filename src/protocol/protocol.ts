@@ -17,15 +17,14 @@ const WRITE_LENGTH_CODE = 0;
  * (`protocol.c`: `c14cux_readMem`, `c14cux_writeMem`).
  *
  * This class is not re-entrant: callers must serialise operations (the
- * `Ecu` class does so with a `CommandQueue`). `cancelRead()` is the one
- * method that is safe to call while a read is in progress.
+ * `Ecu` class does so with a `CommandQueue`). Cancellation is decided by the
+ * caller, through the `isCancelled` callback given to `readMem`.
  */
 export class Protocol {
   readonly #transport: Transport;
   readonly #timeoutMs: number;
   #lastReadCoarseAddress = 0;
   #lastReadQuantity = 0;
-  #cancelRead = false;
 
   /**
    * Creates a protocol handler.
@@ -36,17 +35,6 @@ export class Protocol {
   constructor(transport: Transport, timeoutMs = DEFAULT_READ_TIMEOUT_MS) {
     this.#transport = transport;
     this.#timeoutMs = timeoutMs;
-  }
-
-  /** Stops a multi-chunk read after the chunk currently in flight. */
-  cancelRead(): void {
-    this.#cancelRead = true;
-  }
-
-  // A method, so the flag is re-read after each await (TypeScript would
-  // otherwise narrow it to its value at the top of readMem).
-  #isCancelled(): boolean {
-    return this.#cancelRead;
   }
 
   /** Forgets the last coarse address, forcing the next read to set it. */
@@ -61,13 +49,19 @@ export class Protocol {
    *
    * @param addr - First address to read, 0 to 0xFFFF.
    * @param length - Number of bytes to read. `addr + length` must not exceed 0x10000.
+   * @param isCancelled - Checked before each chunk of a multi-chunk read; a
+   * read that fits in one chunk is never cancelled.
    * @returns The bytes read.
    * @throws {@link RangeError} if the address or length is out of range.
-   * @throws {@link ReadCancelledError} if {@link Protocol.cancelRead} was called.
+   * @throws {@link ReadCancelledError} if `isCancelled` returns `true`.
    * @throws {@link ProtocolError} if an echo is wrong.
    * @throws {@link TimeoutError} if the ECU stops responding.
    */
-  async readMem(addr: number, length: number): Promise<Uint8Array> {
+  async readMem(
+    addr: number,
+    length: number,
+    isCancelled: () => boolean,
+  ): Promise<Uint8Array> {
     assertUint16(addr, 'address');
     assertUint16(length, 'length');
 
@@ -75,14 +69,13 @@ export class Protocol {
       throw new RangeError('Read extends past the end of the address space');
     }
 
-    this.#cancelRead = false;
-
     const result = new Uint8Array(length);
+    const multiChunk = nextRead(length, 0).count < length;
     let totalRead = 0;
 
     try {
       while (totalRead < length) {
-        if (this.#isCancelled()) {
+        if (multiChunk && isCancelled()) {
           throw new ReadCancelledError('Read cancelled');
         }
 

@@ -367,12 +367,67 @@ describe('Ecu.readMem', () => {
       expect(transport.written).toHaveLength(3);
     });
 
-    it('does not affect the next read', async () => {
-      const { ecu } = await patterned();
+    it('cancels a ROM dump still waiting in the queue, before anything is sent (deliberate divergence: C loses a cancel issued before the read starts)', async () => {
+      const { transport, ecu } = await patterned();
+
+      transport.memory[0x2003] = 100;
+
+      const speed = ecu.getRoadSpeed();
+      const dump = ecu.dumpROM();
 
       ecu.cancelRead();
 
-      await expect(ecu.readMem(0x1000, 4)).resolves.toHaveLength(4);
+      await expect(speed).resolves.toBe(62);
+      await expect(dump).rejects.toThrow(ReadCancelledError);
+      // Only the road speed byte was read.
+      expect(readChunkLengths(transport.written)).toEqual([1]);
+    });
+
+    it('cancels every multi-chunk read requested before the call', async () => {
+      const { ecu } = await patterned();
+
+      const first = ecu.readMem(0x1000, 32);
+      const second = ecu.readMem(0x2000, 32);
+
+      ecu.cancelRead();
+
+      await expect(first).rejects.toThrow(ReadCancelledError);
+      await expect(second).rejects.toThrow(ReadCancelledError);
+    });
+
+    it('does not cancel reads that fit in a single chunk', async () => {
+      const { transport, ecu } = await patterned();
+
+      const bytes = ecu.readMem(0x1000, 16);
+
+      ecu.cancelRead();
+
+      expect([...(await bytes)]).toEqual([
+        ...transport.memory.slice(0x1000, 0x1010),
+      ]);
+    });
+
+    it('cancels a fuel map read', async () => {
+      const { transport, ecu } = await patterned();
+
+      transport.memory[0xc23f] = 0x40;
+
+      const map = ecu.getFuelMap(1);
+
+      ecu.cancelRead();
+
+      await expect(map).rejects.toThrow(ReadCancelledError);
+    });
+
+    it('does not affect reads requested after the call', async () => {
+      const { transport, ecu } = await patterned();
+
+      ecu.cancelRead();
+
+      expect([...(await ecu.readMem(0x1000, 32))]).toEqual([
+        ...transport.memory.slice(0x1000, 0x1020),
+      ]);
+      await expect(ecu.dumpROM()).resolves.toHaveLength(0x4000);
     });
   });
 });
