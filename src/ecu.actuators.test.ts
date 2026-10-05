@@ -54,6 +54,30 @@ describe('Ecu actuators', () => {
       },
     );
 
+    it.each([-1, 256, 1.5, Number.NaN])(
+      'rejects step count %d without any I/O',
+      async (steps) => {
+        const { transport, ecu } = await connected();
+
+        transport.memory[0x008a] = 0xff;
+
+        await expect(ecu.driveIdleAirControlMotor(0, steps)).rejects.toThrow(
+          RangeError,
+        );
+        expect(transport.written).toHaveLength(0);
+        expect(transport.memory[0x008a]).toBe(0xff);
+      },
+    );
+
+    it.each([0, 255])('accepts step count %i', async (steps) => {
+      const { transport, ecu } = await connected();
+
+      transport.memory[0x0075] = 0x42;
+      await ecu.driveIdleAirControlMotor(0, steps);
+
+      expect(transport.memory[0x0075]).toBe(steps);
+    });
+
     it('writes nothing when the read fails', async () => {
       const { transport, ecu } = await connected();
 

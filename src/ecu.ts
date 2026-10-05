@@ -823,9 +823,14 @@ export class Ecu {
    * @throws {@link NotConnectedError} if the ECU is not connected.
    * @throws {@link TimeoutError} if the ECU stops responding.
    * @throws {@link ProtocolError} if the ECU echoes a command byte incorrectly.
-   * @throws {@link RangeError} if `steps` is out of range.
+   * @throws {@link RangeError} if `steps` is not an integer from 0 to 255 (no I/O is performed).
    */
   driveIdleAirControlMotor(direction: number, steps: number): Promise<void> {
+    // Checked up front: the direction bit is written before the step count.
+    if (!Number.isInteger(steps) || steps < 0 || steps > 0xff) {
+      return Promise.reject(new RangeError(`Invalid step count: ${steps}`));
+    }
+
     return this.#run(async () => {
       const bits = await this.#byte(MemoryOffset.Bits008A);
 
