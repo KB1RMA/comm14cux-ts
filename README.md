@@ -8,12 +8,7 @@ TypeScript library for communicating with the Lucas 14CUX engine ECU over its se
 
 The Lucas 14CUX was fitted to Rover V8 engines in Land Rover vehicles from 1990 to 1995, and to low-volume sports cars (TVR, Morgan, etc.) through the 1990s. Its diagnostic serial port gives direct access to the ECU's memory, which exposes live engine data, fault codes, fuel maps and the firmware ROM.
 
-The existing tool for this is [RoverGauge](https://github.com/colinbourassa/rovergauge), a Qt desktop app built on the C library [libcomm14cux](https://github.com/colinbourassa/libcomm14cux), both by Colin Bourassa. This project ports the library's protocol and data-decoding logic to TypeScript so it can run:
-
-- **in a browser**, with no install, via the [Web Serial API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API)
-- **in an Electron app**, which bundles Chromium's Web Serial support, for Linux, macOS and Windows installers
-
-This repository is the library only. A user-facing app will be a separate package built on top of it.
+The existing tool for this is [RoverGauge](https://github.com/colinbourassa/rovergauge), a Qt desktop app built on the C library [libcomm14cux](https://github.com/colinbourassa/libcomm14cux), both by Colin Bourassa. This project ports the library's protocol and data-decoding logic to TypeScript.
 
 This project is not affiliated with or endorsed by the author of libcomm14cux or RoverGauge.
 
