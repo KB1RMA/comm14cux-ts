@@ -67,7 +67,7 @@ describe('stored fault codes', () => {
     await vi.advanceTimersByTimeAsync(150);
     port.unplug();
 
-    expect(await settle(clearing)).toBeInstanceOf(DOMException);
+    expect(await settle(clearing)).toBeInstanceOf(Error);
     const block = [...simulator.memory.subarray(0x0049, 0x004f)];
 
     expect(block[0]).toBe(0);

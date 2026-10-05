@@ -71,7 +71,7 @@ describe('ignition switched off', () => {
 });
 
 describe('cable pulled out', () => {
-  it('fails the ROM dump with the browser error and every call after it until reconnected', async () => {
+  it('fails the ROM dump and every later call until reconnected (current behaviour: raw NetworkError, isConnected stays true)', async () => {
     const { ecu, port } = await running();
 
     const dump = ecu.dumpROM().catch((error: unknown) => error);

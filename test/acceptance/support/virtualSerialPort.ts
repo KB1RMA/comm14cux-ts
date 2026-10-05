@@ -268,6 +268,11 @@ export class VirtualSerialPort {
 
     this.#extraDelayMs = 0;
     this.#schedule(sentAt + delay, () => {
+      // Switched off while the bytes were still on the wire.
+      if (!this.#powered) {
+        return;
+      }
+
       // An ECU that cannot take the bytes (the simulator's `failWrites`)
       // simply does not answer.
       this.#ecuReceives(bytes).catch(() => undefined);

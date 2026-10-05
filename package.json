@@ -36,7 +36,7 @@
 		"test:ui": "vitest --ui",
 		"test:coverage": "vitest --coverage",
 		"test:acceptance": "vitest run --config vitest.acceptance.config.ts",
-		"test:acceptance:dist": "npm run build && ACCEPTANCE_TARGET=dist vitest run --config vitest.acceptance.config.ts"
+		"test:acceptance:dist": "npm run build && tsc -p tsconfig.acceptance.dist.json && ACCEPTANCE_TARGET=dist vitest run --config vitest.acceptance.config.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.0",

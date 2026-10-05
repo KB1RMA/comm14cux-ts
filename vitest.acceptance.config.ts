@@ -4,18 +4,20 @@ import { fileURLToPath } from 'node:url';
 import { configDefaults, defineConfig } from 'vitest/config';
 
 // The acceptance suite imports the library by its package name. By default
-// that resolves to the TypeScript sources; with ACCEPTANCE_TARGET=dist it
-// resolves to the built output, so a release is tested as it will ship.
-const target =
-  process.env['ACCEPTANCE_TARGET'] === 'dist'
-    ? './dist/index.js'
-    : './src/index.ts';
+// that is aliased to the TypeScript sources. With ACCEPTANCE_TARGET=dist there
+// is no alias: the name resolves through package.json "exports" to the built
+// output, so a release is tested as it will ship, entry points included.
+const testDist = process.env['ACCEPTANCE_TARGET'] === 'dist';
 
 export default defineConfig({
   resolve: {
-    alias: {
-      'comm14cux-ts': fileURLToPath(new URL(target, import.meta.url)),
-    },
+    alias: testDist
+      ? {}
+      : {
+          'comm14cux-ts': fileURLToPath(
+            new URL('./src/index.ts', import.meta.url),
+          ),
+        },
   },
   test: {
     globals: true,
