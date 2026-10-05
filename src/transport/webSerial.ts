@@ -21,6 +21,9 @@ export class WebSerialTransport implements Transport {
   #writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
   #pending: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
   #leftover: Uint8Array = new Uint8Array(0);
+  // Tracked separately from the stream locks so that a port whose close()
+  // failed, or which exposed no streams, is still known to be open.
+  #portOpen = false;
 
   /**
    * Wraps a serial port. The port is not opened until {@link WebSerialTransport.open}.
@@ -39,7 +42,7 @@ export class WebSerialTransport implements Transport {
    * Does nothing if already open.
    */
   async open(): Promise<void> {
-    if (this.#reader) {
+    if (this.#portOpen) {
       return;
     }
 
@@ -50,6 +53,7 @@ export class WebSerialTransport implements Transport {
       parity: 'none',
       flowControl: 'none',
     });
+    this.#portOpen = true;
     this.#reader = this.#port.readable?.getReader();
     this.#writer = this.#port.writable?.getWriter();
   }
@@ -57,8 +61,15 @@ export class WebSerialTransport implements Transport {
   /**
    * Cancels any pending read, releases the stream locks and closes the port.
    * Does nothing if not open.
+   *
+   * If the port refuses to close, the transport stays open as far as this
+   * method is concerned, so calling it again retries `SerialPort.close()`.
    */
   async close(): Promise<void> {
+    if (!this.#portOpen) {
+      return;
+    }
+
     const reader = this.#reader;
     const writer = this.#writer;
 
@@ -67,14 +78,14 @@ export class WebSerialTransport implements Transport {
     this.#pending = undefined;
     this.#leftover = new Uint8Array(0);
 
-    if (!reader) {
-      return;
+    if (reader) {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
     }
 
-    await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
     writer?.releaseLock();
     await this.#port.close();
+    this.#portOpen = false;
   }
 
   /**
