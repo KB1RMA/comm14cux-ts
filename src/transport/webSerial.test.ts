@@ -2,8 +2,11 @@
 // Copyright (C) 2026 comm14cux-ts contributors
 
 // Spec: docs/test-specification.md §4.2 (against a fake SerialPort)
-import { NotConnectedError, TimeoutError } from '../errors.js';
-import { WebSerialTransport } from './webSerial.js';
+import {
+  NotConnectedError,
+  TimeoutError,
+  WebSerialTransport,
+} from '../index.js';
 
 function fakePort(options: { noStreams?: boolean } = {}) {
   let controller!: ReadableStreamDefaultController<Uint8Array>;

@@ -1,6 +1,6 @@
 # Agent instructions
 
-These rules apply to any AI coding agent or assistant working in this repository. They exist to keep the project compliant with the GNU GPL v3. When a rule conflicts with a task, stop and ask the maintainer instead of working around it.
+These rules apply to any AI coding agent or assistant working in this repository, including when reviewing changes. Most of them exist to keep the project compliant with the GNU GPL v3; the testing rules keep the test suite focused on what users of the library see. When a rule conflicts with a task, stop and ask the maintainer instead of working around it.
 
 ## Licence
 
@@ -60,6 +60,20 @@ Development-only tools that are not shipped (test runners, linters, build tools)
 ## Names and trademarks
 
 - "Rover", "Land Rover", "Lucas" and "RoverGauge" are other parties' names and trademarks. Do not use them in package names, module names, identifiers that appear in the public API, or branding. Describing compatibility in prose ("for the Lucas 14CUX ECU") is fine.
+
+## Tests
+
+Tests must exercise the library the way a user would: through its public API only. The full rationale and the per-feature file map are in `docs/test-specification.md`.
+
+- Import from the package entry point (`src/index.ts`, or `../index.js` from a subdirectory). Never import internal modules such as `src/protocol/`, `src/decoders/`, `src/queue.ts` or `src/bytes.ts` in a test, and do not export internals from `src/index.ts` just to test them.
+- Drive behaviour through `Ecu` against `SimulatedTransport`, or through `WebSerialTransport` against a fake `SerialPort`. Set up a scenario by planting bytes in `SimulatedTransport.memory` or switching on its fault-injection flags, and check the result through return values, rejections, ECU memory and the `SimulatedTransport.written` wire log.
+- Test decoder boundary values through the matching `Ecu` getter, not by calling the decoder.
+- Put shared helpers in `src/test-support/`. They must use the public API too.
+- If a branch cannot be reached through the public API, delete the code instead of testing it directly. Do not lower the coverage thresholds in `vitest.config.ts` to land a change.
+- Name each feature's tests `src/ecu.<feature>.test.ts`, and add a row to the capability map in `docs/test-specification.md` for any new public function.
+- Mark a test that pins behaviour differing from libcomm14cux with "deliberate divergence" in its name, and record the divergence in the specification.
+
+When reviewing a change, flag any test that imports an internal module or bypasses the public API, and any new public behaviour without a public-API test.
 
 ## Warranty
 

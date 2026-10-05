@@ -4,8 +4,11 @@
 // Ported to TypeScript and modified for comm14cux-ts, 2026.
 
 // Spec: docs/test-specification.md §4.1
-import { NotConnectedError, TimeoutError } from '../errors.js';
-import { SimulatedTransport } from './simulated.js';
+import {
+  NotConnectedError,
+  SimulatedTransport,
+  TimeoutError,
+} from '../index.js';
 
 async function opened() {
   const transport = new SimulatedTransport();

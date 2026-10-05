@@ -36,9 +36,3 @@ export class InvalidReadingError extends Comm14cuxError {
   /** The name of this error class. */
   override name = 'InvalidReadingError';
 }
-
-/** The command queue was closed before the task could run. */
-export class QueueClosedError extends Comm14cuxError {
-  /** The name of this error class. */
-  override name = 'QueueClosedError';
-}

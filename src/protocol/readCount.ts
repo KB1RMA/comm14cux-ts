@@ -5,59 +5,41 @@
 import { ReadCount, ReadCountValue } from '../constants.js';
 
 /**
- * Chooses how many bytes to request in the next single read
- * (`c14cux_getByteCountForNextRead`).
- *
- * @param total - Total bytes being read over all requests.
- * @param alreadyRead - Bytes read so far.
- * @returns 512, 400, 100, 80 or 16 if that many bytes remain, otherwise the
- * exact remainder.
+ * A single read request: how many bytes, and the length code that asks the
+ * ECU for them.
  */
-export function nextReadCount(total: number, alreadyRead: number): number {
-  const bytesLeft = total - alreadyRead;
-
-  for (const count of [
-    ReadCount.Count4,
-    ReadCount.Count3,
-    ReadCount.Count2,
-    ReadCount.Count1,
-    ReadCount.Count0,
-  ]) {
-    if (bytesLeft >= count) {
-      return count;
-    }
-  }
-
-  return bytesLeft;
+export interface ReadChunk {
+  /** Number of bytes the ECU will return. */
+  count: number;
+  /** 5-bit length code for the coarse-address command. */
+  code: number;
 }
 
+const PRESETS: readonly ReadChunk[] = [
+  { count: ReadCount.Count4, code: ReadCountValue.Count4 },
+  { count: ReadCount.Count3, code: ReadCountValue.Count3 },
+  { count: ReadCount.Count2, code: ReadCountValue.Count2 },
+  { count: ReadCount.Count1, code: ReadCountValue.Count1 },
+];
+
 /**
- * Gives the 5-bit length code that the ECU expects for a read of `length`
- * bytes.
+ * Chooses the next single read (`c14cux_getByteCountForNextRead`). The ECU
+ * can return 1 to 16, 80, 100, 400 or 512 bytes; 1 to 16 bytes use the code
+ * `count - 1`.
  *
- * @param length - Number of bytes to read, or 0 for the write form of a command.
- * @returns The code, or `undefined` if the ECU cannot produce that many bytes
- * in a single read (valid lengths are 1 to 16, 80, 100, 400 and 512).
+ * @param total - Total bytes being read over all requests.
+ * @param alreadyRead - Bytes read so far; less than `total`.
+ * @returns 512, 400, 100 or 80 bytes if that many remain, otherwise up to 16.
  */
-export function lengthCode(length: number): number | undefined {
-  if (length === 0) {
-    return 0;
+export function nextRead(total: number, alreadyRead: number): ReadChunk {
+  const bytesLeft = total - alreadyRead;
+  const preset = PRESETS.find(({ count }) => bytesLeft >= count);
+
+  if (preset) {
+    return preset;
   }
 
-  if (length >= 1 && length <= ReadCount.Count0) {
-    return length - 1;
-  }
+  const count = Math.min(bytesLeft, ReadCount.Count0);
 
-  switch (length) {
-    case ReadCount.Count1:
-      return ReadCountValue.Count1;
-    case ReadCount.Count2:
-      return ReadCountValue.Count2;
-    case ReadCount.Count3:
-      return ReadCountValue.Count3;
-    case ReadCount.Count4:
-      return ReadCountValue.Count4;
-    default:
-      return undefined;
-  }
+  return { count, code: count - 1 };
 }

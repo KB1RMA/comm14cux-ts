@@ -5,10 +5,12 @@
 import { DEFAULT_READ_TIMEOUT_MS } from '../constants.js';
 import { ProtocolError, ReadCancelledError } from '../errors.js';
 import type { Transport } from '../transport/types.js';
-import { lengthCode, nextReadCount } from './readCount.js';
+import { nextRead } from './readCount.js';
 
 const ADDRESS_SPACE = 0x10000;
 const COARSE_WINDOW = 64;
+// Writes use the coarse-address command with a length code of 0.
+const WRITE_LENGTH_CODE = 0;
 
 /**
  * Memory read and write commands over a `Transport`
@@ -84,7 +86,7 @@ export class Protocol {
           throw new ReadCancelledError('Read cancelled');
         }
 
-        const quantity = nextReadCount(length, totalRead);
+        const { count: quantity, code } = nextRead(length, totalRead);
         const chunkAddr = addr + totalRead;
 
         // The ECU latches only the 64-byte-aligned block (addr >> 6), so the
@@ -95,7 +97,7 @@ export class Protocol {
             Math.trunc(this.#lastReadCoarseAddress / COARSE_WINDOW);
 
         if (!lastByteOnly) {
-          await this.setCoarseAddr(chunkAddr, quantity);
+          await this.setCoarseAddr(chunkAddr, code);
           this.#lastReadCoarseAddress = chunkAddr;
         }
 
@@ -133,28 +135,21 @@ export class Protocol {
     }
 
     this.resetCache();
-    await this.setCoarseAddr(addr, 0);
+    await this.setCoarseAddr(addr, WRITE_LENGTH_CODE);
     await this.#sendEchoed(0x80 | (addr & 0x3f));
     await this.#sendEchoed(value);
   }
 
   /**
-   * Sets the coarse address (and, for reads, the length) for the next command
+   * Sets the coarse address and length code for the next command
    * (`c14cux_setCoarseAddr`).
    *
    * @param addr - Address of the read or write, 0 to 0xFFFF.
-   * @param length - Bytes the following read will return, or 0 for a write.
-   * @throws {@link RangeError} if `length` is not one the ECU supports.
+   * @param code - Length code of the following read, or 0 for a write.
    * @throws {@link ProtocolError} if an echo is wrong.
    * @throws {@link TimeoutError} if the ECU stops responding.
    */
-  async setCoarseAddr(addr: number, length: number): Promise<void> {
-    const code = lengthCode(length);
-
-    if (code === undefined) {
-      throw new RangeError(`Invalid read length: ${length}`);
-    }
-
+  async setCoarseAddr(addr: number, code: number): Promise<void> {
     await this.#sendEchoed(((code << 2) | (addr >> 14)) & 0xff);
     await this.#sendEchoed((addr >> 6) & 0xff);
   }

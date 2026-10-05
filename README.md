@@ -96,7 +96,7 @@ All ECU access is memory reads and writes:
 | Write | `0x80 \| (addr & 0x3F)`, then the value | Echoes each byte |
 
 - A single read returns 1–16, 80, 100, 400 or 512 bytes. Longer reads are split into chunks.
-- When the next read uses the same length and falls within the 64-byte window of the last coarse address, the coarse-address step is skipped, as libcomm14cux does.
+- When the next read uses the same length and falls in the same 64-byte block as the last coarse address, the coarse-address step is skipped. libcomm14cux compares a 64-byte window starting at the last (unaligned) address instead, which can read from the wrong block; this library deliberately does not.
 - Any echo mismatch or timeout fails the operation and clears the coarse-address cache.
 - Long reads (such as a ROM dump) can be stopped with `ecu.cancelRead()`, as in libcomm14cux.
 
@@ -106,7 +106,7 @@ The ECU can only handle one command sequence at a time. The queue serialises eve
 
 ### Decoders and Ecu
 
-Decoders are pure functions that turn raw memory into values (°F/°C, mph/kph, volts, percentages). They include the ROM revision detection that selects memory offsets for older and newer firmware. Keeping them free of I/O makes them easy to unit-test against known byte sequences. `Ecu` combines the queue, protocol and decoders into the public API.
+Decoders are pure functions that turn raw memory into values (°F/°C, mph/kph, volts, percentages). They include the ROM revision detection that selects memory offsets for older and newer firmware. `Ecu` combines the queue, protocol and decoders into the public API.
 
 ### Layout
 
@@ -119,7 +119,11 @@ src/
   constants.ts      memory addresses, enums, ROM-revision tables
   ecu.ts            public API
   index.ts
+  ecu.*.test.ts     tests, by feature, through the public API
+  test-support/     shared test helpers (not published)
 ```
+
+Tests import only from `src/index.ts`, as a user of the library would, and drive the `Ecu` against `SimulatedTransport` (or `WebSerialTransport` against a fake `SerialPort`). Wire-level behaviour is checked through `SimulatedTransport.written`.
 
 ## Platform support
 

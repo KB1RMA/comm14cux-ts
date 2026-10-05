@@ -1,6 +1,6 @@
 # Test specification
 
-This is the behavioural specification for comm14cux-ts, derived from what [libcomm14cux](https://github.com/colinbourassa/libcomm14cux) does today (`protocol.c`, `data.c`, `setup.c`, `comm14cux.h`). Every behaviour below is covered by a colocated `*.test.ts` file. The v1 goal is to mirror libcomm14cux's public surface: one `Ecu` method per `c14cux_*` function.
+This is the behavioural specification for comm14cux-ts, derived from what [libcomm14cux](https://github.com/colinbourassa/libcomm14cux) does today (`protocol.c`, `data.c`, `setup.c`, `comm14cux.h`). Every behaviour below is covered by a test that uses only the library's public API. The v1 goal is to mirror libcomm14cux's public surface: one `Ecu` method per `c14cux_*` function.
 
 Section numbers (§) are referenced from the header comment of each test file.
 
@@ -8,38 +8,39 @@ Section numbers (§) are referenced from the header comment of each test file.
 
 - **Coverage:** `vitest.config.ts` enforces statements/lines ≥ 98 %, functions 100 %, branches ≥ 95 %. Do not lower thresholds to land a change; add tests, or remove dead code.
 - **No hardware in tests.** Everything runs against `SimulatedTransport` (an in-memory 64 KiB ECU) or a fake `SerialPort`.
-- **Decoders are pure** (bytes in, value out), so each has table-driven tests with the boundary values listed here.
+- **Public API only.** Tests import from `src/index.ts`, never from internal modules (`protocol/`, `decoders/`, `queue.ts`, `bytes.ts`), and act as a user would: through `Ecu`, `SimulatedTransport` and `WebSerialTransport`. Decoder boundary values are tested through the matching `Ecu` getter by planting bytes in the simulated memory. Shared helpers live in `src/test-support/`. If a branch cannot be reached through the public API, delete it instead of testing it directly.
 - **Wire-level assertions** use `SimulatedTransport`'s write log, so tests can assert the exact bytes sent.
 - **Surface mapping.** `c14cux_foo(info, &out)` becomes `ecu.foo(): Promise<Out>`; a `false` return becomes a rejected promise (`TimeoutError`, `ProtocolError`, `InvalidReadingError`, `ReadCancelledError`, `NotConnectedError`). The `c14cux_` prefix is dropped and names are camelCase; `c14cux_init`/`cleanup` are the constructor and `disconnect`. `connect` takes no device path or baud rate, because those belong to the `Transport` (`WebSerialTransport` is given the `SerialPort` and optional baud).
-- **Divergences from the C library** are deliberate, minimal, and each has a test marked "deliberate divergence". They exist only where C leaves behaviour undefined (division by zero, `NaN` from `sqrt`, a function with no return statement), or to avoid stale state: the ROM revision and voltage coefficients are forgotten on `disconnect`, so reconnecting to a different ECU is safe. v1 adds nothing to the C library's feature set.
+- **Divergences from the C library** are deliberate, minimal, and each has a test marked "deliberate divergence". They exist only where C leaves behaviour undefined (division by zero, `NaN` from `sqrt`, a function with no return statement), where C reads the wrong data (the coarse-address cache, §2.3), or to avoid stale state: the ROM revision and voltage coefficients are forgotten on `disconnect`, so reconnecting to a different ECU is safe. v1 adds nothing to the C library's feature set.
 - Addresses and constants are taken from `comm14cux.h`. All multi-byte ECU values are big-endian.
 
 ## Capability map
 
 | libcomm14cux function | Spec § | Test file |
 |---|---|---|
-| `c14cux_getByteCountForNextRead` | 2.1 | `src/protocol/readCount.test.ts` |
-| `c14cux_setCoarseAddr` (+ read/write variants) | 2.2 | `src/protocol/coarseAddress.test.ts` |
-| `c14cux_readMem`, `c14cux_sendReadCmd`, `c14cux_cancelRead` | 2.3 | `src/protocol/readMem.test.ts` |
-| `c14cux_writeMem` | 2.4 | `src/protocol/writeMem.test.ts` |
-| mutex around every operation | 3 | `src/queue.test.ts` |
+| `c14cux_getByteCountForNextRead` | 2.1 | `src/ecu.readMem.test.ts` |
+| `c14cux_setCoarseAddr` (+ read/write variants) | 2.2 | `src/ecu.readMem.test.ts`, `src/ecu.writeMem.test.ts` |
+| `c14cux_readMem`, `c14cux_sendReadCmd`, `c14cux_cancelRead`, `c14cux_dumpROM` | 2.3 | `src/ecu.readMem.test.ts` |
+| `c14cux_writeMem` | 2.4 | `src/ecu.writeMem.test.ts` |
+| mutex around every operation | 3 | `src/ecu.serialisation.test.ts` |
 | serial open/close, baud, timeouts | 4 | `src/transport/*.test.ts` |
-| `c14cux_getCoolantTemp`, `c14cux_getFuelTemp` | 5.1 | `src/decoders/temperature.test.ts` |
-| `c14cux_getRoadSpeed` | 5.2 | `src/decoders/roadSpeed.test.ts` |
-| `c14cux_getMAFReading` | 5.3 | `src/decoders/airflow.test.ts` |
-| `c14cux_getIdleBypassMotorPosition`, `c14cux_getTargetIdle` | 5.4 | `src/decoders/idleBypass.test.ts` |
-| `c14cux_getEngineRPM`, `c14cux_getRPMLimit` | 5.5 | `src/decoders/engineSpeed.test.ts` |
-| `c14cux_getThrottlePosition` | 5.6 | `src/decoders/throttle.test.ts` |
-| `c14cux_getGearSelection` | 5.7 | `src/decoders/gear.test.ts` |
-| `c14cux_determineDataOffsets` | 5.8 | `src/decoders/romRevision.test.ts` |
-| `c14cux_getMainVoltage` | 5.9 | `src/decoders/mainVoltage.test.ts` |
-| `c14cux_getFuelMap`, `getCurrentFuelMap`, `getFuelMapRowIndex`, `getFuelMapColumnIndex`, `getRpmTable` | 5.10 | `src/decoders/fuelMap.test.ts` |
-| `c14cux_getLambdaTrimShort/Long`, `c14cux_getCOTrimVoltage` | 5.11 | `src/decoders/lambdaTrim.test.ts` |
-| `c14cux_getFaultCodes`, `c14cux_clearFaultCodes` | 5.12 | `src/decoders/faultCodes.test.ts` |
-| `getFuelPumpRelayState`, `isMILOn`, `getIdleMode`, `getScreenHeaterState`, `getACCompressorState`, `getPurgeValveState` | 5.13 | `src/decoders/flags.test.ts` |
-| `c14cux_getTuneRevision` | 5.14 | `src/decoders/tuneRevision.test.ts` |
-| `c14cux_getInjectorPulseWidth` | 5.15 | `src/decoders/injector.test.ts` |
-| `c14cux_connect/disconnect/isConnected`, `dumpROM`, `runFuelPump`, `driveIdleAirControlMotor`, raw `readMem`/`writeMem`, `getLibraryVersion`, all getters | 6 | `src/ecu.test.ts` |
+| `c14cux_getCoolantTemp`, `c14cux_getFuelTemp` | 5.1 | `src/ecu.sensors.test.ts` |
+| `c14cux_getRoadSpeed` | 5.2 | `src/ecu.sensors.test.ts` |
+| `c14cux_getMAFReading` | 5.3 | `src/ecu.sensors.test.ts` |
+| `c14cux_getIdleBypassMotorPosition`, `c14cux_getTargetIdle` | 5.4 | `src/ecu.sensors.test.ts` |
+| `c14cux_getEngineRPM`, `c14cux_getRPMLimit` | 5.5 | `src/ecu.sensors.test.ts` |
+| `c14cux_getThrottlePosition` | 5.6 | `src/ecu.sensors.test.ts` |
+| `c14cux_getGearSelection` | 5.7 | `src/ecu.sensors.test.ts` |
+| `c14cux_determineDataOffsets` | 5.8 | `src/ecu.romData.test.ts` |
+| `c14cux_getMainVoltage` | 5.9 | `src/ecu.romData.test.ts` |
+| `c14cux_getFuelMap`, `getCurrentFuelMap`, `getFuelMapRowIndex`, `getFuelMapColumnIndex`, `getRpmTable` | 5.10 | `src/ecu.romData.test.ts` |
+| `c14cux_getLambdaTrimShort/Long`, `c14cux_getCOTrimVoltage` | 5.11 | `src/ecu.sensors.test.ts` |
+| `c14cux_getFaultCodes`, `c14cux_clearFaultCodes` | 5.12 | `src/ecu.status.test.ts` |
+| `getFuelPumpRelayState`, `isMILOn`, `getIdleMode`, `getScreenHeaterState`, `getACCompressorState`, `getPurgeValveState` | 5.13 | `src/ecu.status.test.ts` |
+| `c14cux_getTuneRevision` | 5.14 | `src/ecu.status.test.ts` |
+| `c14cux_getInjectorPulseWidth` | 5.15 | `src/ecu.sensors.test.ts` |
+| `c14cux_connect/disconnect/isConnected`, `getLibraryVersion` | 6 | `src/ecu.connection.test.ts` |
+| `c14cux_runFuelPump`, `c14cux_driveIdleAirControlMotor` | 6 | `src/ecu.actuators.test.ts` |
 
 ## 2. Protocol
 
@@ -54,11 +55,11 @@ Two bytes, each echoed by the ECU before the next is sent:
 - byte 1 = `(lengthCode << 2) | (addr >> 14)`
 - byte 2 = `(addr >> 6) & 0xFF`
 
-Failure cases: wrong echo, no echo, write error, invalid length.
+Failure cases: wrong echo, no echo, write error. (The library only ever asks for lengths from §2.1, so an invalid length cannot occur.)
 
 ### 2.3 Read
 
-After the coarse address, send `0xC0 | (addr & 0x3F)`. The ECU does not echo this byte; it begins streaming data. The coarse address is skipped when the chunk length equals the previous chunk's length and `lastCoarse <= addr < lastCoarse + 64` (the cache stores the full address, not a 64-byte-aligned one; preserve that). The cache is cleared on any failed read and at the start of any write. `cancelRead()` (the one call that bypasses the queue) takes effect after the in-flight chunk; the read fails with `ReadCancelledError` and returns no partial data. A new read clears a stale cancel request.
+After the coarse address, send `0xC0 | (addr & 0x3F)`. The ECU does not echo this byte; it begins streaming data. The coarse address is skipped when the chunk length equals the previous chunk's length and the address is in the same 64-byte block as the last coarse address (`addr >> 6 === lastCoarse >> 6`). **Deliberate divergence:** libcomm14cux stores the full, unaligned address and tests `lastCoarse <= addr < lastCoarse + 64`. The ECU latches only `addr >> 6`, so that window can reach into the next block and read the wrong bytes (for example a word at `0x005F` then one at `0x0082` returns the bytes at `0x0042`). The cache is also cleared on disconnect. The cache is cleared on any failed read and at the start of any write. `cancelRead()` (the one call that bypasses the queue) takes effect after the in-flight chunk; the read fails with `ReadCancelledError` and returns no partial data. A new read clears a stale cancel request.
 
 ### 2.4 Write
 
@@ -66,7 +67,7 @@ Four bytes, each echoed: coarse address (code 0), `0x80 | (addr & 0x3F)`, value.
 
 ## 3. CommandQueue
 
-libcomm14cux holds a mutex for the duration of each public call. The queue gives the same guarantee: one task at a time, FIFO, a rejection affects only its own caller, and closing the queue rejects pending work.
+libcomm14cux holds a mutex for the duration of each public call. The queue gives the same guarantee: one task at a time, FIFO, and a rejection affects only its own caller. `disconnect` waits for an operation in progress.
 
 ## 4. Transports
 
