@@ -219,7 +219,9 @@ jobs:
         env:
           NAME: ${{ needs.build.outputs.name }}
           NPM_TAG: ${{ needs.build.outputs.npm-tag }}
-        run: npm publish "package/${NAME}.tgz" --provenance --access public --tag "$NPM_TAG"
+        # The leading ./ makes npm treat this as a file; "package/x.tgz" alone is
+        # read as a GitHub user/repo shorthand.
+        run: npm publish "./package/${NAME}.tgz" --provenance --access public --tag "$NPM_TAG"
 
   attest:
     name: Attest and upload to the release
