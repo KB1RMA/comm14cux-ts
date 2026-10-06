@@ -7,6 +7,17 @@
  */
 export class CommandQueue {
   #tail: Promise<unknown> = Promise.resolve();
+  #pending = 0;
+
+  /**
+   * The number of tasks that have been queued and have not yet settled,
+   * including the one running.
+   *
+   * @returns The count.
+   */
+  get pending(): number {
+    return this.#pending;
+  }
 
   /**
    * Queues a task and runs it once all earlier tasks have settled.
@@ -17,7 +28,12 @@ export class CommandQueue {
   run<T>(task: () => Promise<T>): Promise<T> {
     const result = this.#tail.then(task);
 
-    this.#tail = result.catch(() => undefined);
+    const settled = (): undefined => {
+      this.#pending--;
+    };
+
+    this.#pending++;
+    this.#tail = result.then(settled, settled);
 
     return result;
   }

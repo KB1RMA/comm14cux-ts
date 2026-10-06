@@ -6,6 +6,7 @@ import {
   NotConnectedError,
   TimeoutError,
   WebSerialTransport,
+  type SerialChunkTrace,
 } from '../index.js';
 
 function fakePort(options: { noStreams?: boolean } = {}) {
@@ -193,6 +194,91 @@ describe('WebSerialTransport', () => {
       fake.end();
 
       await expect(transport.read(1, 50)).rejects.toThrow(NotConnectedError);
+    });
+  });
+
+  describe('trace hook', () => {
+    async function tracedTransport() {
+      const fake = fakePort();
+      const events: SerialChunkTrace[] = [];
+      const transport = new WebSerialTransport(fake.asSerialPort, {
+        onTrace: (e) => events.push(e),
+      });
+
+      await transport.open();
+
+      return { fake, transport, events };
+    }
+
+    it('reports the size of each chunk the port delivers', async () => {
+      const { fake, transport, events } = await tracedTransport();
+
+      fake.push(1);
+      fake.push(2, 3);
+      fake.push(4, 5, 6);
+      await transport.read(6, 50);
+
+      expect(events.map((e) => [e.type, e.size])).toEqual([
+        ['serial-chunk', 1],
+        ['serial-chunk', 2],
+        ['serial-chunk', 3],
+      ]);
+    });
+
+    it('reports a chunk once, however many reads it feeds', async () => {
+      const { fake, transport, events } = await tracedTransport();
+
+      fake.push(1, 2, 3, 4);
+      await transport.read(1, 50);
+      await transport.read(3, 50);
+
+      expect(events).toHaveLength(1);
+    });
+
+    it('reports timing: the wait for each chunk and the gap between chunks', async () => {
+      const { fake, transport, events } = await tracedTransport();
+      const before = Date.now();
+
+      const read = transport.read(2, 200);
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      fake.push(1);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      fake.push(2);
+      await read;
+
+      expect(events[0]?.timestamp).toBeGreaterThanOrEqual(before);
+      expect(events[0]?.sinceLastChunkMs).toBeUndefined();
+      expect(events[0]?.waitedMs).toBeGreaterThanOrEqual(15);
+      expect(events[1]?.sinceLastChunkMs).toBeGreaterThanOrEqual(15);
+      expect(events[1]?.waitedMs).toBeGreaterThanOrEqual(15);
+    });
+
+    it('is unaffected by a hook that throws', async () => {
+      const fake = fakePort();
+      const transport = new WebSerialTransport(fake.asSerialPort, {
+        onTrace: () => {
+          throw new Error('logger broke');
+        },
+      });
+
+      await transport.open();
+      fake.push(7);
+
+      expect([...(await transport.read(1, 50))]).toEqual([7]);
+    });
+
+    it('gives a timeout the wait and how many bytes had arrived', async () => {
+      const { fake, transport } = await tracedTransport();
+
+      fake.push(1, 2);
+
+      await expect(transport.read(5, 5)).rejects.toMatchObject({
+        name: 'TimeoutError',
+        timeoutMs: 5,
+        requestedBytes: 5,
+        receivedBytes: 2,
+      });
     });
   });
 

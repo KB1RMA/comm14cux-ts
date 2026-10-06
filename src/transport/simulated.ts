@@ -134,20 +134,28 @@ export class SimulatedTransport implements Transport {
    * Takes bytes from the simulated ECU's reply.
    *
    * @param length - Number of bytes wanted.
-   * @param _timeoutMs - Ignored; the simulation answers immediately.
+   * @param timeoutMs - Only reported in a {@link TimeoutError}; the simulation answers immediately.
    * @returns Exactly `length` bytes.
    * @throws {@link TimeoutError} if the ECU has not produced that many bytes.
    * @throws {@link NotConnectedError} if the transport is closed.
    */
-  read(length: number, _timeoutMs: number): Promise<Uint8Array> {
+  read(length: number, timeoutMs: number): Promise<Uint8Array> {
     if (!this.#open) {
       return Promise.reject(new NotConnectedError('Transport is not open'));
     }
 
     if (this.#output.length < length) {
+      const received = this.#output.length;
+
       this.#output = [];
 
-      return Promise.reject(new TimeoutError('Simulated ECU is silent'));
+      return Promise.reject(
+        new TimeoutError('Simulated ECU is silent', {
+          timeoutMs,
+          requestedBytes: length,
+          receivedBytes: received,
+        }),
+      );
     }
 
     return Promise.resolve(Uint8Array.from(this.#output.splice(0, length)));

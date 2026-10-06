@@ -34,6 +34,34 @@ await ecu.disconnect();
 
 Methods are named after the `c14cux_*` functions (`getCoolantTemp`, `getFuelMap`, `clearFaultCodes`, …). Where the C functions return `false`, these methods reject with an error from the `Comm14cuxError` family.
 
+## Diagnostics
+
+To see what the library is doing, for example to log a remote user's session, pass an `onTrace` handler. Each event has a `type` and a `timestamp`; switch on `type`.
+
+```ts
+import { Ecu, WebSerialTransport, type TraceEvent } from '@kb1rma/libcomm14cux-ts';
+
+const onTrace = (event: TraceEvent) => console.debug(JSON.stringify(event));
+const ecu = new Ecu(new WebSerialTransport(port, { onTrace }), { onTrace });
+```
+
+| `type` | Emitted | Main fields |
+|---|---|---|
+| `operation-start` / `operation-end` | around every public call, including `connect` and `disconnect` | `operation` (method name, e.g. `getEngineRPM`), `operationId`, `address` and `length` (`readMem`, `dumpROM`); `durationMs`, `ok`, `error` |
+| `queue-wait` | when a call had to wait behind earlier calls | `waitMs`, `ahead` |
+| `read-chunk` | for each chunk of a read split into several commands | `address`, `length`, `chunkIndex`, `chunkCount` |
+| `echo-mismatch` | just before a `ProtocolError` for a wrong echo | `expected`, `received`, `position`, `command` |
+| `cancel-read` | when `cancelRead()` is called | `outstanding` (calls running or queued) |
+| `read-cancelled` | for each read that `cancelRead()` stopped | `address`, `length`, `bytesRead` |
+| `serial-chunk` | `WebSerialTransport` only: each chunk the port delivered | `size`, `sinceLastChunkMs`, `waitedMs` |
+
+Events other than `cancel-read` and `serial-chunk` carry the `operation` and `operationId` they belong to, so a log can be grouped by call.
+
+- **Chunks from the adapter.** `serial-chunk` shows how the USB adapter splits the ECU's reply (its latency timer and packet size), which the `Ecu` never sees because `WebSerialTransport` joins chunks into the reads it is asked for. The timestamp is when the transport took the chunk from the port; a chunk that arrives while no read is waiting is taken on the next read.
+- **Errors carry the same detail.** `ProtocolError` has `expected`, `actual`, `position` and `command`; `TimeoutError` has `timeoutMs`, `requestedBytes`, `receivedBytes` and `command`. They are set whether or not a handler is passed.
+- **Cost.** Without a handler no event objects are built and no clocks are read. A handler runs synchronously, so keep it quick; an exception it throws is ignored.
+- **Not traced.** Calls rejected for invalid arguments before any I/O (for example `getFuelMap(9)`) emit nothing.
+
 ## Scope
 
 Capabilities, matching what libcomm14cux provides:
@@ -116,6 +144,7 @@ src/
   transport/        Transport interface, WebSerialTransport, SimulatedTransport
   protocol/         Protocol (readMem / writeMem), read chunking
   queue.ts          CommandQueue
+  trace.ts          TraceEvent types for the onTrace hook
   decoders/         per-reading conversion functions (pure)
   constants.ts      memory addresses, enums, ROM-revision tables
   ecu.ts            public API

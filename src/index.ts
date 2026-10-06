@@ -4,6 +4,17 @@
 export { Ecu, type EcuOptions, type FuelMap } from './ecu.js';
 export * from './constants.js';
 export * from './errors.js';
+export type {
+  CancelReadTrace,
+  EchoMismatchTrace,
+  OperationEndTrace,
+  OperationStartTrace,
+  QueueWaitTrace,
+  ReadCancelledTrace,
+  ReadChunkTrace,
+  SerialChunkTrace,
+  TraceEvent,
+} from './trace.js';
 export type { Transport } from './transport/types.js';
 export { SimulatedTransport } from './transport/simulated.js';
 export {
