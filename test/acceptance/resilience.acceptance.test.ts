@@ -4,7 +4,11 @@
 // Journey: things going wrong in the car park. The ignition is switched off,
 // the cable is pulled, the line is noisy, the USB adapter is slow. The
 // application should get a clear error and be able to carry on.
-import { Comm14cuxError, ProtocolError, TimeoutError } from 'comm14cux-ts';
+import {
+  Comm14cuxError,
+  ProtocolError,
+  TimeoutError,
+} from '@kb1rma/libcomm14cux-ts';
 import { revCRom, virtualEcu, warmIdle } from './fixtures/index.js';
 import { bench, type BenchOptions } from './support/bench.js';
 import { settle, timed, useVirtualClock } from './support/clock.js';

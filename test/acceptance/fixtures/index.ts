@@ -2,7 +2,7 @@
 // Copyright (C) 2026 comm14cux-ts contributors
 
 // Assembles a simulated ECU from the fixtures in this folder.
-import { SimulatedTransport } from 'comm14cux-ts';
+import { SimulatedTransport } from '@kb1rma/libcomm14cux-ts';
 import type { EngineState } from './engineStates.js';
 import type { FaultFixture } from './faults.js';
 import type { RomFixture } from './roms.js';

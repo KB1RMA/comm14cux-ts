@@ -5,7 +5,7 @@
 
 // Stored fault-code blocks (0x0049 to 0x004E) and the faults each one means,
 // from the bit table in docs/test-specification.md §5.12.
-import type { FaultCodeName } from 'comm14cux-ts';
+import type { FaultCodeName } from '@kb1rma/libcomm14cux-ts';
 
 /** A fault block and the faults that should read as set. */
 export interface FaultFixture {

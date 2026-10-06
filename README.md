@@ -1,4 +1,4 @@
-# comm14cux-ts
+# libcomm14cux-ts
 
 TypeScript library for communicating with the Lucas 14CUX engine ECU over its serial diagnostic port, using the Web Serial API.
 
@@ -12,10 +12,16 @@ The existing tool for this is [RoverGauge](https://github.com/colinbourassa/rove
 
 This project is not affiliated with or endorsed by the author of libcomm14cux or RoverGauge.
 
+## Installation
+
+```sh
+npm install @kb1rma/libcomm14cux-ts
+```
+
 ## Usage
 
 ```ts
-import { Ecu, WebSerialTransport, AirflowType } from 'comm14cux-ts';
+import { Ecu, WebSerialTransport, AirflowType } from '@kb1rma/libcomm14cux-ts';
 
 const port = await navigator.serial.requestPort();
 const ecu = new Ecu(new WebSerialTransport(port));

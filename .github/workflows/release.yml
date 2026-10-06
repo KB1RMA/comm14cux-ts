@@ -1,0 +1,119 @@
+name: Release
+run-name: Release ${{ github.event.release.tag_name || github.ref_name }}
+
+# Publishing a GitHub release tests and builds the tagged commit, runs the
+# acceptance suite against that build, and only if everything passes publishes
+# the package to npm with a provenance statement.
+#
+# Publishing uses npm trusted publishing (OIDC), so there is no npm token. The
+# trusted publisher configured on the package at npmjs.com names this
+# repository, this workflow file (release.yml) and the `publish-npm`
+# environment, so npm only accepts a publish from the publish job below.
+
+permissions:
+  contents: read
+
+on:
+  release:
+    types:
+      - published
+  # Retries a publish by hand, for example after an npm outage. The ref must
+  # be a release's tag; the run fails on a branch.
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.release.tag_name || github.ref_name }}
+
+jobs:
+  build:
+    name: Test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+    steps:
+      # Only a release's tag may be published, including on a manual run.
+      - name: Check the ref is a release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            echo "::error::Run this workflow on a release tag, not ${GITHUB_REF}."
+            exit 1
+          fi
+          prerelease=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)
+          echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Check the tag matches package.json
+        id: version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [[ "$TAG" != "v${version}" ]]; then
+            echo "::error::Tag ${TAG} does not match package.json version ${version}."
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run type:check
+      - run: npm test -- --run --coverage
+      - run: npm run test:acceptance:dist
+      - run: npm run build
+
+      - name: Upload the build
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # trusted publishing: exchange the OIDC token for npm publish rights
+    # The trusted publisher on npm requires this environment name. Add
+    # required reviewers to the environment to gate each publish behind a
+    # manual approval.
+    environment:
+      name: publish-npm
+      url: https://www.npmjs.com/package/@kb1rma/libcomm14cux-ts/v/${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or newer.
+      - name: Update npm
+        run: npm install -g npm@^11.5.1
+      - name: Download the tested build
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      # Prereleases go to the "next" dist-tag so `npm install` never picks
+      # them up as the latest version.
+      - name: Publish
+        env:
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          tag=latest
+          if [[ "$PRERELEASE" == "true" ]]; then tag=next; fi
+          npm publish --provenance --access public --tag "$tag"

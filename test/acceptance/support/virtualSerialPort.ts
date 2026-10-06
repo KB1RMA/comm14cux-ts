@@ -7,7 +7,7 @@
 // the ECU's response delay, and a USB adapter that hands bytes to the host in
 // packets after a latency timer. Everything is scheduled with `setTimeout`, so
 // tests run it under Vitest's fake timers (see `clock.ts`).
-import { BAUD, type SimulatedTransport } from 'comm14cux-ts';
+import { BAUD, type SimulatedTransport } from '@kb1rma/libcomm14cux-ts';
 
 /** How the cable and ECU behave. */
 export interface CableOptions {
