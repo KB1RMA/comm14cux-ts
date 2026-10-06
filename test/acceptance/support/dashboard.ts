@@ -3,7 +3,12 @@
 
 // Reads every live value the way a dashboard application would: all at once,
 // relying on the `Ecu` to queue the calls.
-import { AirflowType, Bank, type Ecu, ThrottlePosType } from 'comm14cux-ts';
+import {
+  AirflowType,
+  Bank,
+  type Ecu,
+  ThrottlePosType,
+} from '@kb1rma/libcomm14cux-ts';
 import type { Dashboard } from '../fixtures/engineStates.js';
 
 /**

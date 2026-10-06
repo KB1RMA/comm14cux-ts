@@ -7,7 +7,7 @@
 // the readings each should produce. Raw values are chosen by hand; expected
 // values are worked out from docs/test-specification.md §5 and written as
 // literals or as the spec's formula, never by calling the library.
-import { Gear, PurgeValveState } from 'comm14cux-ts';
+import { Gear, PurgeValveState } from '@kb1rma/libcomm14cux-ts';
 
 /** Everything a live-data dashboard shows, as read by `readDashboard`. */
 export interface Dashboard {

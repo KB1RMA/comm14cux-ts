@@ -9,7 +9,7 @@ import {
   SimulatedTransport,
   WebSerialTransport,
   type WebSerialTransportOptions,
-} from 'comm14cux-ts';
+} from '@kb1rma/libcomm14cux-ts';
 import { type CableOptions, VirtualSerialPort } from './virtualSerialPort.js';
 
 /** Everything on the bench. */

@@ -77,7 +77,7 @@ Tests must exercise the library the way a user would: through its public API onl
 
 `test/acceptance/` holds user-journey tests that run the whole stack: `Ecu` → `WebSerialTransport` → a simulated serial cable → `SimulatedTransport`, under fake timers. It is run with `npm run test:acceptance` and, in CI and before a release, against the built package with `npm run test:acceptance:dist`. See §7 of `docs/test-specification.md`.
 
-- Import the library as `'comm14cux-ts'`, never by relative path, so the same tests can run against `dist/`.
+- Import the library as `'@kb1rma/libcomm14cux-ts'`, never by relative path, so the same tests can run against `dist/`.
 - Put helpers in `test/acceptance/support/` and data in `test/acceptance/fixtures/`. Both follow the public-API rules above.
 - Write fixture expectations as literals or spec formulas, never by calling the library.
 - ROM fixtures are synthetic. Never commit a real ECU ROM dump or data copied from one.
