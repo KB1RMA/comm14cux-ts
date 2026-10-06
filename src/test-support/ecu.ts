@@ -5,19 +5,25 @@
 
 // Helpers shared by the test files. Everything here goes through the
 // package entry point, as a user of the library would.
-import { DataOffsetRev, Ecu, SimulatedTransport } from '../index.js';
+import {
+  DataOffsetRev,
+  Ecu,
+  SimulatedTransport,
+  type EcuOptions,
+} from '../index.js';
 
 /**
  * Creates an `Ecu` over a fresh `SimulatedTransport` and connects it.
  *
+ * @param options - Extra `Ecu` options, such as `onTrace`.
  * @returns The connected `Ecu` and the simulated ECU behind it.
  */
-export async function connected(): Promise<{
+export async function connected(options: EcuOptions = {}): Promise<{
   transport: SimulatedTransport;
   ecu: Ecu;
 }> {
   const transport = new SimulatedTransport();
-  const ecu = new Ecu(transport, { readTimeoutMs: 5 });
+  const ecu = new Ecu(transport, { readTimeoutMs: 5, ...options });
 
   await ecu.connect();
 

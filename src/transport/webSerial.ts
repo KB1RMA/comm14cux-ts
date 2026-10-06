@@ -3,6 +3,7 @@
 
 import { BAUD } from '../constants.js';
 import { NotConnectedError, TimeoutError } from '../errors.js';
+import { guardTrace, type SerialChunkTrace } from '../trace.js';
 import type { Transport } from './types.js';
 
 /**
@@ -11,6 +12,19 @@ import type { Transport } from './types.js';
 export interface WebSerialTransportOptions {
   /** 7812 for standard ECUs; 15625 for modified double-speed firmware. */
   baudRate?: number;
+  /**
+   * Receives a {@link SerialChunkTrace} for each chunk the port delivers,
+   * with its size and timing. Chunk boundaries depend on the USB adapter and
+   * its latency timer, and are otherwise hidden because the transport joins
+   * chunks into the reads the protocol asks for. The same handler can be
+   * given to {@link EcuOptions.onTrace}.
+   *
+   * The timestamp is when the transport took the chunk from the stream. A
+   * chunk that arrives while no read is waiting is taken on the next read.
+   * When omitted, nothing is measured. An exception thrown by the handler is
+   * ignored.
+   */
+  onTrace?: (event: SerialChunkTrace) => void;
 }
 
 /** `Transport` over a Web Serial `SerialPort` (8N1, no flow control). */
@@ -21,6 +35,8 @@ export class WebSerialTransport implements Transport {
   #writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
   #pending: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
   #leftover: Uint8Array = new Uint8Array(0);
+  readonly #trace: ((event: SerialChunkTrace) => void) | undefined;
+  #lastChunkAt: number | undefined;
 
   /**
    * Wraps a serial port. The port is not opened until {@link WebSerialTransport.open}.
@@ -32,6 +48,7 @@ export class WebSerialTransport implements Transport {
   constructor(port: SerialPort, options: WebSerialTransportOptions = {}) {
     this.#port = port;
     this.#baudRate = options.baudRate ?? BAUD;
+    this.#trace = options.onTrace && guardTrace(options.onTrace);
   }
 
   /**
@@ -66,6 +83,7 @@ export class WebSerialTransport implements Transport {
     this.#writer = undefined;
     this.#pending = undefined;
     this.#leftover = new Uint8Array(0);
+    this.#lastChunkAt = undefined;
 
     if (!reader) {
       return;
@@ -113,7 +131,10 @@ export class WebSerialTransport implements Transport {
 
     while (filled < length) {
       if (this.#leftover.length === 0) {
-        this.#leftover = await this.#nextChunk(reader, timeoutMs);
+        this.#leftover = await this.#nextChunk(reader, timeoutMs, {
+          requestedBytes: length,
+          receivedBytes: filled,
+        });
       }
 
       const take = Math.min(length - filled, this.#leftover.length);
@@ -129,14 +150,21 @@ export class WebSerialTransport implements Transport {
   async #nextChunk(
     reader: ReadableStreamDefaultReader<Uint8Array>,
     timeoutMs: number,
+    progress: { requestedBytes: number; receivedBytes: number },
   ): Promise<Uint8Array> {
     // A read that timed out is still pending; reuse it so no data is lost.
     const pending = (this.#pending ??= reader.read());
+    const waitStarted = this.#trace ? performance.now() : 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        reject(new TimeoutError(`No data from ECU for ${timeoutMs} ms`));
+        reject(
+          new TimeoutError(`No data from ECU for ${timeoutMs} ms`, {
+            timeoutMs,
+            ...progress,
+          }),
+        );
       }, timeoutMs);
     });
 
@@ -147,6 +175,22 @@ export class WebSerialTransport implements Transport {
 
       if (chunk.done) {
         throw new NotConnectedError('Serial stream ended');
+      }
+
+      if (this.#trace) {
+        const now = performance.now();
+
+        this.#trace({
+          type: 'serial-chunk',
+          timestamp: Date.now(),
+          size: chunk.value.length,
+          sinceLastChunkMs:
+            this.#lastChunkAt === undefined
+              ? undefined
+              : now - this.#lastChunkAt,
+          waitedMs: now - waitStarted,
+        });
+        this.#lastChunkAt = now;
       }
 
       return chunk.value;

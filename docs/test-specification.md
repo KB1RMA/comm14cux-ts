@@ -41,6 +41,8 @@ Section numbers (§) are referenced from the header comment of each test file.
 | `c14cux_getInjectorPulseWidth` | 5.15 | `src/ecu.sensors.test.ts` |
 | `c14cux_connect/disconnect/isConnected`, `getLibraryVersion` | 6 | `src/ecu.connection.test.ts` |
 | `c14cux_runFuelPump`, `c14cux_driveIdleAirControlMotor` | 6 | `src/ecu.actuators.test.ts` |
+| `EcuOptions.onTrace`, structured `ProtocolError`/`TimeoutError` fields (no libcomm14cux equivalent) | 6.1 | `src/ecu.trace.test.ts` |
+| `WebSerialTransportOptions.onTrace` (no libcomm14cux equivalent) | 4.2, 6.1 | `src/transport/webSerial.test.ts` |
 
 ## 2. Protocol
 
@@ -166,6 +168,21 @@ Connection lifecycle (connecting twice is a no-op), raw `readMem`/`writeMem`, `d
 As in C, any direction other than 0 closes the valve. The C `c14cux_driveIdleAirControlMotor` ignores the results of its writes and has no return statement on any path, so its result is undefined. The TypeScript version reports failure if any step fails.
 
 Every public `Ecu` call is queued (the C library locks only inside `readMem`/`writeMem`), so compound operations such as `runFuelPump` cannot be interleaved with another call.
+
+### 6.1 Trace hook and structured errors
+
+`EcuOptions.onTrace` and `WebSerialTransportOptions.onTrace` are additions with no libcomm14cux equivalent, for diagnosing a connection remotely (README, "Diagnostics"). They must not change what the library does. Tests drive `Ecu` against `SimulatedTransport`, using its fault-injection flags, and record the events:
+
+- **Operations:** every public call emits `operation-start` then `operation-end` with its method name, a sequence number, a duration and `ok`/`error`. `readMem` and `dumpROM` add `address` and `length`. A rejection (`silent`, `failWrites`, not connected) ends with `ok: false` and the error.
+- **Queue waits:** `queue-wait` appears only for a call that had to wait, with the number of calls ahead of it.
+- **Split reads:** one `read-chunk` per chunk (address, length, index, count) for reads that need more than one command, none for single-chunk reads.
+- **Echo mismatches:** `corruptNextEcho` gives an `echo-mismatch` (expected, received, position, command) before `operation-end`, for a coarse-address byte and for the value byte of a write.
+- **Cancellation:** `cancel-read` with the number of outstanding calls, then a `read-cancelled` for each read stopped, whether mid-read or still queued.
+- **Serial chunks:** `WebSerialTransport` against a fake port emits one `serial-chunk` per chunk delivered, with size and timing, however the reads that consume them are split.
+- **Structured errors:** `ProtocolError.expected/actual/position/command`; `TimeoutError.timeoutMs/requestedBytes/receivedBytes/command` for `silent`, `streamLimit` and a real `WebSerialTransport` timeout. These are set without a hook.
+- **No behaviour change:** the bytes on the wire are identical with and without a hook, and a handler that throws does not affect any operation.
+
+Calls rejected for invalid arguments before any I/O emit no events.
 
 ## 7. Acceptance suite
 
