@@ -41,7 +41,15 @@ To see what the library is doing, for example to log a remote user's session, pa
 ```ts
 import { Ecu, WebSerialTransport, type TraceEvent } from '@kb1rma/libcomm14cux-ts';
 
-const onTrace = (event: TraceEvent) => console.debug(JSON.stringify(event));
+// An Error's message and stack are not enumerable, so copy them for JSON.
+const onTrace = (event: TraceEvent) =>
+  console.debug(
+    JSON.stringify(event, (_key, value: unknown) =>
+      value instanceof Error
+        ? { ...value, name: value.name, message: value.message }
+        : value,
+    ),
+  );
 const ecu = new Ecu(new WebSerialTransport(port, { onTrace }), { onTrace });
 ```
 

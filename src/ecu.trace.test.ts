@@ -436,6 +436,27 @@ describe('Ecu trace hook', () => {
 
       await expect(ecu.readMem(0x1000, 1)).rejects.toBe(failure);
     });
+
+    it("adds the command to a transport's own TimeoutError without replacing it", async () => {
+      class AdapterTimeout extends TimeoutError {
+        readonly adapter = 'FT232R';
+      }
+      const { transport, ecu } = await connected();
+      const failure = new AdapterTimeout('adapter timed out');
+
+      vi.spyOn(transport, 'read').mockRejectedValueOnce(failure);
+
+      const error = await ecu.readMem(0x1000, 1).catch((e: unknown) => e);
+
+      expect(error).toBe(failure);
+      expect(error).toMatchObject({
+        adapter: 'FT232R',
+        timeoutMs: 5,
+        requestedBytes: 1,
+        receivedBytes: undefined,
+        command: [0x00, 0x40],
+      });
+    });
   });
 
   describe('hook safety', () => {

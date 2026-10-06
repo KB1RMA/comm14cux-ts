@@ -131,19 +131,10 @@ export class WebSerialTransport implements Transport {
 
     while (filled < length) {
       if (this.#leftover.length === 0) {
-        try {
-          this.#leftover = await this.#nextChunk(reader, timeoutMs);
-        } catch (error) {
-          if (error instanceof TimeoutError) {
-            throw new TimeoutError(error.message, {
-              timeoutMs,
-              requestedBytes: length,
-              receivedBytes: filled,
-            });
-          }
-
-          throw error;
-        }
+        this.#leftover = await this.#nextChunk(reader, timeoutMs, {
+          requestedBytes: length,
+          receivedBytes: filled,
+        });
       }
 
       const take = Math.min(length - filled, this.#leftover.length);
@@ -159,6 +150,7 @@ export class WebSerialTransport implements Transport {
   async #nextChunk(
     reader: ReadableStreamDefaultReader<Uint8Array>,
     timeoutMs: number,
+    progress: { requestedBytes: number; receivedBytes: number },
   ): Promise<Uint8Array> {
     // A read that timed out is still pending; reuse it so no data is lost.
     const pending = (this.#pending ??= reader.read());
@@ -167,7 +159,12 @@ export class WebSerialTransport implements Transport {
 
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        reject(new TimeoutError(`No data from ECU for ${timeoutMs} ms`));
+        reject(
+          new TimeoutError(`No data from ECU for ${timeoutMs} ms`, {
+            timeoutMs,
+            ...progress,
+          }),
+        );
       }, timeoutMs);
     });
 
