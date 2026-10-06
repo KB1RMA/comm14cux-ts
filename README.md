@@ -144,6 +144,26 @@ This project is therefore licensed under the **GNU General Public License v3.0 o
 
 Parts of this project were written with the help of an AI assistant. The original libcomm14cux and RoverGauge projects do not accept AI-generated contributions, so nothing from this repository will be submitted to them.
 
+## Verifying a release
+
+Every version is published from GitHub Actions with npm trusted publishing, and npm records a signed [SLSA provenance](https://slsa.dev/) statement for it (the "Built and signed on GitHub Actions" badge on the package page). In a project that depends on the package, `npm audit signatures` checks the registry signatures and the provenance.
+
+Each stable release also has three attestations signed with Sigstore and stored on this repository, all about the exact tarball published to npm:
+
+- SLSA build provenance: which workflow, commit and runner built it
+- a CycloneDX SBOM of its runtime dependencies
+- an in-toto test result listing the unit and acceptance tests that passed against it
+
+Download the tarball from the [release](https://github.com/KB1RMA/libcomm14cux-ts/releases) (or with `npm pack @kb1rma/libcomm14cux-ts@<version>`) and verify it with the [GitHub CLI](https://cli.github.com/):
+
+```sh
+gh attestation verify kb1rma-libcomm14cux-ts-<version>.tgz --repo KB1RMA/libcomm14cux-ts
+gh attestation verify kb1rma-libcomm14cux-ts-<version>.tgz --repo KB1RMA/libcomm14cux-ts \
+  --predicate-type https://in-toto.io/attestation/test-result/v0.1 --format json
+```
+
+The release also carries each attestation as a `.sigstore.json` bundle, so it can be checked offline with `--bundle`. Beta versions published under the `next` dist-tag have the npm provenance only.
+
 ## Development
 
 Requires Node.js (see `.nvmrc`).
