@@ -18,7 +18,7 @@ export interface Version {
 }
 
 /** Updated by release-please; must match `version` in package.json (enforced by a test). */
-const PACKAGE_VERSION = '0.0.0'; // x-release-please-version
+const PACKAGE_VERSION = '0.1.0'; // x-release-please-version
 
 const [major = 0, minor = 0, patch = 0] =
   PACKAGE_VERSION.split('.').map(Number);

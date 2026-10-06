@@ -1,6 +1,6 @@
 {
 	"name": "@kb1rma/libcomm14cux-ts",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "TypeScript library for communicating with the Lucas 14CUX engine ECU over a serial port using the Web Serial API",
 	"license": "GPL-3.0-only",
 	"repository": {
