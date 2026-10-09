@@ -10,6 +10,9 @@ const MEMORY_SIZE = 0x10000;
 
 type State = 'idle' | 'coarse2' | 'writeValue';
 
+/** How {@link SimulatedTransport.failMemoryWritesAfter} fails a write. */
+export type MemoryWriteFault = 'silent' | 'corruptEcho';
+
 function lengthFromCode(code: number): number | undefined {
   if (code <= 0x0f) {
     return code + 1;
@@ -46,11 +49,11 @@ export class SimulatedTransport implements Transport {
   /** Fault injection: reject every write. */
   failWrites = false;
   /**
-   * Fault injection: refuse memory writes. The write command is rejected
-   * before it reaches the ECU, so memory is unchanged, while reads keep
-   * working.
+   * Fault injection: how a failed memory write looks to the host. `'silent'`
+   * (the default) gives no echo for the write command; `'corruptEcho'` echoes
+   * it inverted. Either way the value is not stored.
    */
-  failMemoryWrites = false;
+  memoryWriteFault: MemoryWriteFault = 'silent';
   /** Fault injection: stream at most this many bytes per read command. */
   streamLimit: number | undefined = undefined;
 
@@ -62,6 +65,29 @@ export class SimulatedTransport implements Transport {
   #latched = false;
   #lengthCode = 0;
   #writeAddr = 0;
+  #failMemoryWritesAfter: number | undefined = undefined;
+  #memoryWritesDone = 0;
+
+  /**
+   * Fault injection: let this many memory writes succeed, then fail every
+   * later one, while reads keep working. `undefined` (the default) never
+   * fails; `0` fails the first. Setting it starts the count again.
+   *
+   * @returns The number of memory writes allowed to succeed.
+   */
+  get failMemoryWritesAfter(): number | undefined {
+    return this.#failMemoryWritesAfter;
+  }
+
+  /**
+   * Sets the memory-write fault limit and starts the count again.
+   *
+   * @param count - Memory writes to allow before failing, or `undefined` for none.
+   */
+  set failMemoryWritesAfter(count: number | undefined) {
+    this.#failMemoryWritesAfter = count;
+    this.#memoryWritesDone = 0;
+  }
 
   /**
    * Whether the transport is open.
@@ -117,9 +143,7 @@ export class SimulatedTransport implements Transport {
    * @param data - Bytes to send.
    * @returns A promise that resolves once the bytes are delivered.
    * @throws {@link NotConnectedError} if the transport is closed.
-   * @throws Error if {@link SimulatedTransport.failWrites} is set, or if
-   * {@link SimulatedTransport.failMemoryWrites} is set and the bytes include a
-   * memory write command. Bytes before that command are still delivered.
+   * @throws Error if {@link SimulatedTransport.failWrites} is set.
    */
   write(data: Uint8Array): Promise<void> {
     if (!this.#open) {
@@ -131,10 +155,6 @@ export class SimulatedTransport implements Transport {
     }
 
     for (const byte of data) {
-      if (this.failMemoryWrites && this.#isWriteCommand(byte)) {
-        return Promise.reject(new Error('Simulated memory write failure'));
-      }
-
       this.written.push(byte);
       this.#receive(byte);
     }
@@ -178,13 +198,10 @@ export class SimulatedTransport implements Transport {
     }
   }
 
-  #isWriteCommand(byte: number): boolean {
-    return this.#state === 'idle' && this.#latched && (byte & 0xc0) === 0x80;
-  }
-
   #receive(byte: number): void {
     if (this.#state === 'writeValue') {
       this.memory[this.#writeAddr] = byte;
+      this.#memoryWritesDone += 1;
       this.#echo(byte);
       this.#state = 'idle';
       this.#latched = false;
@@ -211,11 +228,24 @@ export class SimulatedTransport implements Transport {
       // A command byte without a preceding coarse address is ignored.
     } else if ((byte & 0xc0) === 0xc0) {
       this.#streamRead(this.#coarse | (byte & 0x3f));
+    } else if (this.#memoryWriteFails()) {
+      // The command is dropped, so the value never reaches memory and the
+      // next byte is taken as the start of a new command.
+      if (this.memoryWriteFault === 'corruptEcho') {
+        this.#echo(byte ^ 0xff);
+      }
     } else {
       this.#writeAddr = this.#coarse | (byte & 0x3f);
       this.#echo(byte);
       this.#state = 'writeValue';
     }
+  }
+
+  #memoryWriteFails(): boolean {
+    return (
+      this.#failMemoryWritesAfter !== undefined &&
+      this.#memoryWritesDone >= this.#failMemoryWritesAfter
+    );
   }
 
   #streamRead(address: number): void {

@@ -55,6 +55,25 @@ describe('stored fault codes', () => {
     ]);
   });
 
+  it('leaves faults partly cleared if a write is dropped, and finishes without reconnecting', async () => {
+    const { ecu, simulator } = await workshop(workshopFull);
+    const before = [...simulator.memory.subarray(0x0049, 0x004f)];
+
+    simulator.failMemoryWritesAfter = 2;
+
+    await expect(settle(ecu.clearFaultCodes())).rejects.toThrow(TimeoutError);
+    expect([...simulator.memory.subarray(0x0049, 0x004f)]).toEqual([
+      0,
+      0,
+      ...before.slice(2),
+    ]);
+
+    simulator.failMemoryWritesAfter = undefined;
+    await settle(ecu.clearFaultCodes());
+
+    expect(setFaults(await settle(ecu.getFaultCodes()))).toEqual([]);
+  });
+
   it('leaves faults partly cleared if the cable is pulled, and finishes after reconnecting', async () => {
     const { ecu, port, simulator } = await workshop(workshopFull);
 
@@ -128,13 +147,13 @@ describe('actuator tests', () => {
     expect(simulator.written).toHaveLength(sent);
   });
 
-  it('reports an idle air control command the ECU refuses, and keeps reading', async () => {
+  it('reports an idle air control command the ECU drops, writing nothing, and keeps reading', async () => {
     const { ecu, simulator } = bench({
       simulator: virtualEcu({ rom: revCRom, state: warmIdle }),
     });
 
     await settle(ecu.connect());
-    simulator.failMemoryWrites = true;
+    simulator.failMemoryWritesAfter = 0;
 
     await expect(settle(ecu.driveIdleAirControlMotor(1, 20))).rejects.toThrow(
       TimeoutError,
@@ -142,11 +161,30 @@ describe('actuator tests', () => {
     // Neither the direction bit nor the step count was written.
     expect(simulator.memory[0x008a]).toBe(0x00);
     expect(simulator.memory[0x0075]).toBe(0);
+    // The link is still in step: readings are right without reconnecting.
     expect(await settle(ecu.getEngineRPM())).toBe(750);
+    expect(await settle(ecu.getCoolantTemp())).toBe(190);
 
-    simulator.failMemoryWrites = false;
+    simulator.failMemoryWritesAfter = undefined;
     await settle(ecu.driveIdleAirControlMotor(1, 20));
     expect(simulator.memory[0x0075]).toBe(20);
+  });
+
+  it('leaves an idle air control command half done when the second write is dropped', async () => {
+    const { ecu, simulator } = bench({
+      simulator: virtualEcu({ rom: revCRom, state: warmIdle }),
+    });
+
+    await settle(ecu.connect());
+    simulator.failMemoryWritesAfter = 1;
+
+    await expect(settle(ecu.driveIdleAirControlMotor(1, 20))).rejects.toThrow(
+      TimeoutError,
+    );
+    // The direction bit was set; the step count was not.
+    expect(simulator.memory[0x008a]).toBe(0x01);
+    expect(simulator.memory[0x0075]).toBe(0);
+    expect(await settle(ecu.getEngineRPM())).toBe(750);
   });
 
   it('keeps live readings correct while actuator commands are queued between them', async () => {

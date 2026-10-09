@@ -28,9 +28,58 @@ describe('Ecu actuators', () => {
       await expect(ecu.runFuelPump()).rejects.toThrow(TimeoutError);
       expect(transport.memory[0x00af]).toBe(0);
     });
+
+    it('writes nothing when the first write fails', async () => {
+      const { transport, ecu } = await connected();
+
+      transport.memory[0x0002] = 0xff;
+      transport.failMemoryWritesAfter = 0;
+
+      await expect(ecu.runFuelPump()).rejects.toThrow(TimeoutError);
+      expect(transport.memory[0x00af]).toBe(0);
+      expect(transport.memory[0x0002]).toBe(0xff);
+    });
+
+    it('sets the timer but leaves port 1 when the second write fails', async () => {
+      const { transport, ecu } = await connected();
+
+      transport.memory[0x0002] = 0xff;
+      transport.failMemoryWritesAfter = 1;
+
+      await expect(ecu.runFuelPump()).rejects.toThrow(TimeoutError);
+      expect(transport.memory[0x00af]).toBe(0xff);
+      expect(transport.memory[0x0002]).toBe(0xff);
+      expect(await ecu.getFuelPumpRelayState()).toBe(false);
+    });
   });
 
   describe('driveIdleAirControlMotor', () => {
+    it('writes nothing when the direction write fails', async () => {
+      const { transport, ecu } = await connected();
+
+      transport.memory[0x008a] = 0x10;
+      transport.failMemoryWritesAfter = 0;
+
+      await expect(ecu.driveIdleAirControlMotor(1, 20)).rejects.toThrow(
+        TimeoutError,
+      );
+      expect(transport.memory[0x008a]).toBe(0x10);
+      expect(transport.memory[0x0075]).toBe(0);
+    });
+
+    it('sets the direction but not the step count when the second write fails', async () => {
+      const { transport, ecu } = await connected();
+
+      transport.memory[0x008a] = 0x10;
+      transport.failMemoryWritesAfter = 1;
+
+      await expect(ecu.driveIdleAirControlMotor(1, 20)).rejects.toThrow(
+        TimeoutError,
+      );
+      expect(transport.memory[0x008a]).toBe(0x11);
+      expect(transport.memory[0x0075]).toBe(0);
+    });
+
     it('direction 0 clears bit 0 of 0x008A, then writes the step count', async () => {
       const { transport, ecu } = await connected();
 

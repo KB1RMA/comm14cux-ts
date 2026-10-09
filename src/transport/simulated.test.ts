@@ -135,24 +135,45 @@ describe('SimulatedTransport', () => {
     await expect(t.write(bytes(1))).rejects.toThrow('Simulated write failure');
   });
 
-  it('can refuse memory writes but still answer reads', async () => {
+  it('can let some memory writes succeed, then drop later write commands without echo', async () => {
     const t = await opened();
 
-    t.memory[0x1000] = 0x5a;
-    t.failMemoryWrites = true;
-    await t.write(bytes(0x00, 0x1000 >> 6));
-    await t.read(2, 1);
+    t.failMemoryWritesAfter = 1;
+    await t.write(bytes(0x00, 0x00, 0x80, 0x11));
+    await t.read(4, 1);
+    await t.write(bytes(0x00, 0x00, 0x81));
 
-    await expect(t.write(bytes(0x80, 0x01))).rejects.toThrow(
-      'Simulated memory write failure',
-    );
-    expect(t.memory[0x1000]).toBe(0x5a);
-    expect(t.written).toEqual([0x00, 0x1000 >> 6]);
+    // Only the two coarse-address bytes are echoed.
+    await expect(t.read(3, 1)).rejects.toThrow(TimeoutError);
+    expect(t.failMemoryWritesAfter).toBe(1);
 
-    await t.write(bytes(0x00, 0x1000 >> 6));
-    await t.read(2, 1);
-    await t.write(bytes(0xc0));
-    expect([...(await t.read(1, 1))]).toEqual([0x5a]);
+    // Reads still work, and the dropped write left memory unchanged.
+    await t.write(bytes(0x01 << 2, 0x00, 0xc0));
+    expect([...(await t.read(4, 1))]).toEqual([0x04, 0x00, 0x11, 0x00]);
+  });
+
+  it('starts counting memory writes again when the limit is set', async () => {
+    const t = await opened();
+
+    await t.write(bytes(0x00, 0x00, 0x80, 0x11));
+    await t.read(4, 1);
+    t.failMemoryWritesAfter = 1;
+    await t.write(bytes(0x00, 0x00, 0x81, 0x22));
+
+    expect([...(await t.read(4, 1))]).toEqual([0x00, 0x00, 0x81, 0x22]);
+    expect(t.memory[1]).toBe(0x22);
+  });
+
+  it('can corrupt the echo of a failed memory write command', async () => {
+    const t = await opened();
+
+    t.memoryWriteFault = 'corruptEcho';
+    t.failMemoryWritesAfter = 0;
+    await t.write(bytes(0x00, 0x00, 0x80));
+
+    expect([...(await t.read(3, 1))]).toEqual([0x00, 0x00, 0x7f]);
+    await t.write(bytes(0x00, 0x00, 0xc0));
+    expect([...(await t.read(3, 1))]).toEqual([0x00, 0x00, 0x00]);
   });
 
   it('can limit streamed bytes', async () => {

@@ -70,17 +70,28 @@ describe('Ecu.writeMem', () => {
     );
   });
 
-  it('fails a refused memory write without changing memory, and reads still work', async () => {
+  it('times out on an injected memory write fault, leaving memory unchanged and reads working', async () => {
     const { transport, ecu } = await connected();
 
     transport.memory[0x1000] = 0x5a;
-    transport.failMemoryWrites = true;
+    transport.failMemoryWritesAfter = 0;
 
-    await expect(ecu.writeMem(0x1000, 1)).rejects.toThrow(
-      'Simulated memory write failure',
-    );
+    await expect(ecu.writeMem(0x1000, 1)).rejects.toThrow(TimeoutError);
+    // The value byte is never sent.
+    expect(transport.written).toEqual([0x00, 0x1000 >> 6, 0x80]);
     expect(transport.memory[0x1000]).toBe(0x5a);
     expect([...(await ecu.readMem(0x1000, 1))]).toEqual([0x5a]);
+  });
+
+  it('reports a corrupted write echo as a ProtocolError, leaving memory unchanged', async () => {
+    const { transport, ecu } = await connected();
+
+    transport.memoryWriteFault = 'corruptEcho';
+    transport.failMemoryWritesAfter = 0;
+
+    await expect(ecu.writeMem(0x1000, 1)).rejects.toThrow(ProtocolError);
+    expect(transport.memory[0x1000]).toBe(0);
+    expect([...(await ecu.readMem(0x1000, 1))]).toEqual([0]);
   });
 
   it('fails when the transport has been closed underneath the Ecu', async () => {
