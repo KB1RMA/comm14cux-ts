@@ -73,7 +73,7 @@ libcomm14cux holds a mutex for the duration of each public call. The queue gives
 
 ### 4.1 SimulatedTransport
 
-A behavioural model of the ECU side of the wire, backed by a 64 KiB image. It must be faithful enough that the protocol tests are meaningful: echoes on coarse-address and write bytes, no echo on the read command, correct streaming for every length code, and fault-injection switches (corrupt echo, go silent, fail write).
+A behavioural model of the ECU side of the wire, backed by a 64 KiB image. It must be faithful enough that the protocol tests are meaningful: echoes on coarse-address and write bytes, no echo on the read command, correct streaming for every length code, and fault-injection switches (corrupt echo, go silent, fail write, refuse memory writes while still answering reads).
 
 ### 4.2 WebSerialTransport
 

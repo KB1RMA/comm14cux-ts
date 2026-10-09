@@ -5,7 +5,7 @@
 
 // Journey: a workshop session. Read the stored faults, clear them, and
 // exercise the fuel pump and idle air control valve.
-import type { FaultCodeName } from '@kb1rma/libcomm14cux-ts';
+import { TimeoutError, type FaultCodeName } from '@kb1rma/libcomm14cux-ts';
 import {
   allFaultFixtures,
   keyOnEngineOff,
@@ -126,6 +126,27 @@ describe('actuator tests', () => {
       RangeError,
     );
     expect(simulator.written).toHaveLength(sent);
+  });
+
+  it('reports an idle air control command the ECU refuses, and keeps reading', async () => {
+    const { ecu, simulator } = bench({
+      simulator: virtualEcu({ rom: revCRom, state: warmIdle }),
+    });
+
+    await settle(ecu.connect());
+    simulator.failMemoryWrites = true;
+
+    await expect(settle(ecu.driveIdleAirControlMotor(1, 20))).rejects.toThrow(
+      TimeoutError,
+    );
+    // Neither the direction bit nor the step count was written.
+    expect(simulator.memory[0x008a]).toBe(0x00);
+    expect(simulator.memory[0x0075]).toBe(0);
+    expect(await settle(ecu.getEngineRPM())).toBe(750);
+
+    simulator.failMemoryWrites = false;
+    await settle(ecu.driveIdleAirControlMotor(1, 20));
+    expect(simulator.memory[0x0075]).toBe(20);
   });
 
   it('keeps live readings correct while actuator commands are queued between them', async () => {

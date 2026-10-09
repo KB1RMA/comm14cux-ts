@@ -45,6 +45,12 @@ export class SimulatedTransport implements Transport {
   silent = false;
   /** Fault injection: reject every write. */
   failWrites = false;
+  /**
+   * Fault injection: refuse memory writes. The write command is rejected
+   * before it reaches the ECU, so memory is unchanged, while reads keep
+   * working.
+   */
+  failMemoryWrites = false;
   /** Fault injection: stream at most this many bytes per read command. */
   streamLimit: number | undefined = undefined;
 
@@ -111,7 +117,9 @@ export class SimulatedTransport implements Transport {
    * @param data - Bytes to send.
    * @returns A promise that resolves once the bytes are delivered.
    * @throws {@link NotConnectedError} if the transport is closed.
-   * @throws Error if {@link SimulatedTransport.failWrites} is set.
+   * @throws Error if {@link SimulatedTransport.failWrites} is set, or if
+   * {@link SimulatedTransport.failMemoryWrites} is set and the bytes include a
+   * memory write command. Bytes before that command are still delivered.
    */
   write(data: Uint8Array): Promise<void> {
     if (!this.#open) {
@@ -123,6 +131,10 @@ export class SimulatedTransport implements Transport {
     }
 
     for (const byte of data) {
+      if (this.failMemoryWrites && this.#isWriteCommand(byte)) {
+        return Promise.reject(new Error('Simulated memory write failure'));
+      }
+
       this.written.push(byte);
       this.#receive(byte);
     }
@@ -164,6 +176,10 @@ export class SimulatedTransport implements Transport {
     } else {
       this.#output.push(byte);
     }
+  }
+
+  #isWriteCommand(byte: number): boolean {
+    return this.#state === 'idle' && this.#latched && (byte & 0xc0) === 0x80;
   }
 
   #receive(byte: number): void {

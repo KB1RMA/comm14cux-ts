@@ -135,6 +135,26 @@ describe('SimulatedTransport', () => {
     await expect(t.write(bytes(1))).rejects.toThrow('Simulated write failure');
   });
 
+  it('can refuse memory writes but still answer reads', async () => {
+    const t = await opened();
+
+    t.memory[0x1000] = 0x5a;
+    t.failMemoryWrites = true;
+    await t.write(bytes(0x00, 0x1000 >> 6));
+    await t.read(2, 1);
+
+    await expect(t.write(bytes(0x80, 0x01))).rejects.toThrow(
+      'Simulated memory write failure',
+    );
+    expect(t.memory[0x1000]).toBe(0x5a);
+    expect(t.written).toEqual([0x00, 0x1000 >> 6]);
+
+    await t.write(bytes(0x00, 0x1000 >> 6));
+    await t.read(2, 1);
+    await t.write(bytes(0xc0));
+    expect([...(await t.read(1, 1))]).toEqual([0x5a]);
+  });
+
   it('can limit streamed bytes', async () => {
     const t = await opened();
 

@@ -70,6 +70,19 @@ describe('Ecu.writeMem', () => {
     );
   });
 
+  it('fails a refused memory write without changing memory, and reads still work', async () => {
+    const { transport, ecu } = await connected();
+
+    transport.memory[0x1000] = 0x5a;
+    transport.failMemoryWrites = true;
+
+    await expect(ecu.writeMem(0x1000, 1)).rejects.toThrow(
+      'Simulated memory write failure',
+    );
+    expect(transport.memory[0x1000]).toBe(0x5a);
+    expect([...(await ecu.readMem(0x1000, 1))]).toEqual([0x5a]);
+  });
+
   it('fails when the transport has been closed underneath the Ecu', async () => {
     const { transport, ecu } = await connected();
 
