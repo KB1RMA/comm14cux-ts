@@ -173,3 +173,10 @@ export type PurgeValveState =
 
 /** Default per-read silence timeout, matching libcomm14cux (100 ms). */
 export const DEFAULT_READ_TIMEOUT_MS = 100;
+
+/**
+ * Default quiet time after a failed command (500 ms). The ECU drops a
+ * half-received command after 256 passes of its main loop with nothing
+ * received; this is a conservative estimate of how long that takes.
+ */
+export const DEFAULT_COMMAND_RESET_MS = 500;

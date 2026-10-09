@@ -170,6 +170,24 @@ describe('actuator tests', () => {
     expect(simulator.memory[0x0075]).toBe(20);
   });
 
+  it('reports an idle air control command as failed even though the ECU took it, when the last echo is lost', async () => {
+    const { ecu, simulator } = bench({
+      simulator: virtualEcu({ rom: revCRom, state: warmIdle }),
+    });
+
+    await settle(ecu.connect());
+    simulator.memoryWriteFault = 'valueEchoLost';
+    simulator.failMemoryWritesAfter = 1;
+
+    await expect(settle(ecu.driveIdleAirControlMotor(1, 20))).rejects.toThrow(
+      TimeoutError,
+    );
+    // An error does not mean nothing changed: both writes landed.
+    expect(simulator.memory[0x008a]).toBe(0x01);
+    expect(simulator.memory[0x0075]).toBe(20);
+    expect(await settle(ecu.getEngineRPM())).toBe(750);
+  });
+
   it('leaves an idle air control command half done when the second write is dropped', async () => {
     const { ecu, simulator } = bench({
       simulator: virtualEcu({ rom: revCRom, state: warmIdle }),

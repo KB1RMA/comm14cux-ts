@@ -4,7 +4,13 @@
 // Ported to TypeScript and modified for comm14cux-ts, 2026.
 
 // Spec: docs/test-specification.md §2.4 (c14cux_writeMem)
-import { NotConnectedError, ProtocolError, TimeoutError } from './index.js';
+import {
+  Ecu,
+  NotConnectedError,
+  ProtocolError,
+  SimulatedTransport,
+  TimeoutError,
+} from './index.js';
 import { connected } from './test-support/ecu.js';
 
 describe('Ecu.writeMem', () => {
@@ -83,15 +89,83 @@ describe('Ecu.writeMem', () => {
     expect([...(await ecu.readMem(0x1000, 1))]).toEqual([0x5a]);
   });
 
-  it('reports a corrupted write echo as a ProtocolError, leaving memory unchanged', async () => {
+  it('waits for the ECU to drop a write whose command echo was garbled, so the next command is not stored as its value (deliberate divergence)', async () => {
     const { transport, ecu } = await connected();
 
-    transport.memoryWriteFault = 'corruptEcho';
+    transport.memory[0x007c] = 0x27;
+    transport.memory[0x007d] = 0x10;
+    transport.memoryWriteFault = 'commandEchoCorrupted';
     transport.failMemoryWritesAfter = 0;
 
     await expect(ecu.writeMem(0x1000, 1)).rejects.toThrow(ProtocolError);
+    expect(await ecu.getEngineRPM()).toBe(750);
     expect(transport.memory[0x1000]).toBe(0);
-    expect([...(await ecu.readMem(0x1000, 1))]).toEqual([0]);
+  });
+
+  it('may have written the value when its echo is lost', async () => {
+    const { transport, ecu } = await connected();
+
+    transport.memoryWriteFault = 'valueEchoLost';
+    transport.failMemoryWritesAfter = 0;
+
+    await expect(ecu.writeMem(0x1000, 1)).rejects.toThrow(TimeoutError);
+    expect(transport.memory[0x1000]).toBe(1);
+    expect([...(await ecu.readMem(0x1000, 1))]).toEqual([1]);
+  });
+
+  it('may have written the value when its echo is garbled', async () => {
+    const { transport, ecu } = await connected();
+
+    transport.memoryWriteFault = 'valueEchoCorrupted';
+    transport.failMemoryWritesAfter = 0;
+
+    await expect(ecu.writeMem(0x1000, 1)).rejects.toThrow(ProtocolError);
+    expect([...(await ecu.readMem(0x1000, 1))]).toEqual([1]);
+  });
+
+  it('waits commandResetMs of quiet before the next command after a failure', async () => {
+    const transport = new SimulatedTransport();
+    const ecu = new Ecu(transport, { readTimeoutMs: 5, commandResetMs: 42 });
+    const read = transport.read.bind(transport);
+    const timeouts: number[] = [];
+
+    await ecu.connect();
+    transport.failMemoryWritesAfter = 0;
+    await expect(ecu.writeMem(0x1000, 1)).rejects.toThrow(TimeoutError);
+
+    transport.read = (length, timeoutMs) => {
+      timeouts.push(timeoutMs);
+
+      return read(length, timeoutMs);
+    };
+
+    await ecu.readMem(0x1000, 1);
+    await ecu.readMem(0x1000, 1);
+
+    // Only the first command after the failure waits.
+    expect(timeouts).toEqual([42, 5, 5, 5, 5]);
+  });
+
+  it('reports a closed transport while waiting for quiet after a failure', async () => {
+    const { transport, ecu } = await connected();
+
+    transport.failMemoryWritesAfter = 0;
+    await expect(ecu.writeMem(0x1000, 1)).rejects.toThrow(TimeoutError);
+    await transport.close();
+
+    await expect(ecu.readMem(0x1000, 1)).rejects.toThrow(NotConnectedError);
+  });
+
+  it('fails the next command if the ECU never goes quiet after a failure', async () => {
+    const { transport, ecu } = await connected();
+
+    transport.failMemoryWritesAfter = 0;
+    await expect(ecu.writeMem(0x1000, 1)).rejects.toThrow(TimeoutError);
+    transport.read = () => Promise.resolve(Uint8Array.of(0));
+
+    await expect(ecu.readMem(0x1000, 1)).rejects.toThrow(
+      'ECU did not go quiet',
+    );
   });
 
   it('fails when the transport has been closed underneath the Ecu', async () => {

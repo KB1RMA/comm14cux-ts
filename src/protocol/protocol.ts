@@ -2,8 +2,11 @@
 // Derived from libcomm14cux (https://github.com/colinbourassa/libcomm14cux)
 // Copyright (C) Colin Bourassa. Licensed under the GNU GPL v3.
 // Ported to TypeScript and modified for comm14cux-ts, 2026.
-import { DEFAULT_READ_TIMEOUT_MS } from '../constants.js';
-import { ProtocolError, ReadCancelledError } from '../errors.js';
+import {
+  DEFAULT_COMMAND_RESET_MS,
+  DEFAULT_READ_TIMEOUT_MS,
+} from '../constants.js';
+import { ProtocolError, ReadCancelledError, TimeoutError } from '../errors.js';
 import type { Transport } from '../transport/types.js';
 import { nextRead } from './readCount.js';
 
@@ -11,6 +14,9 @@ const ADDRESS_SPACE = 0x10000;
 const COARSE_WINDOW = 64;
 // Writes use the coarse-address command with a length code of 0.
 const WRITE_LENGTH_CODE = 0;
+// The longest the ECU can keep talking after a failed command: a whole
+// 512-byte read reply, plus a few echoes.
+const MAX_LATE_BYTES = 0x200 + 4;
 
 /**
  * Memory read and write commands over a `Transport`
@@ -23,6 +29,8 @@ const WRITE_LENGTH_CODE = 0;
 export class Protocol {
   readonly #transport: Transport;
   readonly #timeoutMs: number;
+  readonly #commandResetMs: number;
+  #resyncNeeded = false;
   #lastReadCoarseAddress = 0;
   #lastReadQuantity = 0;
 
@@ -31,10 +39,17 @@ export class Protocol {
    *
    * @param transport - The link to the ECU.
    * @param timeoutMs - Silence timeout for each read, in milliseconds.
+   * @param commandResetMs - Quiet time to wait for after a failed command,
+   * in milliseconds.
    */
-  constructor(transport: Transport, timeoutMs = DEFAULT_READ_TIMEOUT_MS) {
+  constructor(
+    transport: Transport,
+    timeoutMs = DEFAULT_READ_TIMEOUT_MS,
+    commandResetMs = DEFAULT_COMMAND_RESET_MS,
+  ) {
     this.#transport = transport;
     this.#timeoutMs = timeoutMs;
+    this.#commandResetMs = commandResetMs;
   }
 
   /** Forgets the last coarse address, forcing the next read to set it. */
@@ -74,6 +89,8 @@ export class Protocol {
     let totalRead = 0;
 
     try {
+      await this.#resync();
+
       while (totalRead < length) {
         if (multiChunk && isCancelled()) {
           throw new ReadCancelledError('Read cancelled');
@@ -105,6 +122,8 @@ export class Protocol {
       }
     } catch (error) {
       this.resetCache();
+      // Cancellation happens between chunks, when the ECU is idle.
+      this.#resyncNeeded ||= !(error instanceof ReadCancelledError);
       throw error;
     }
 
@@ -128,9 +147,16 @@ export class Protocol {
     }
 
     this.resetCache();
-    await this.setCoarseAddr(addr, WRITE_LENGTH_CODE);
-    await this.#sendEchoed(0x80 | (addr & 0x3f));
-    await this.#sendEchoed(value);
+
+    try {
+      await this.#resync();
+      await this.setCoarseAddr(addr, WRITE_LENGTH_CODE);
+      await this.#sendEchoed(0x80 | (addr & 0x3f));
+      await this.#sendEchoed(value);
+    } catch (error) {
+      this.#resyncNeeded = true;
+      throw error;
+    }
   }
 
   /**
@@ -145,6 +171,36 @@ export class Protocol {
   async setCoarseAddr(addr: number, code: number): Promise<void> {
     await this.#sendEchoed(((code << 2) | (addr >> 14)) & 0xff);
     await this.#sendEchoed((addr >> 6) & 0xff);
+  }
+
+  /**
+   * After a failed command the ECU may still be waiting for the rest of it,
+   * and would take the next byte sent as that rest: for a write, as the value
+   * to store. Waits until the line has been quiet long enough for the ECU to
+   * drop the half-received command, discarding any late bytes.
+   *
+   * @throws {@link ProtocolError} if the ECU never goes quiet.
+   */
+  async #resync(): Promise<void> {
+    if (!this.#resyncNeeded) {
+      return;
+    }
+
+    for (let i = 0; i <= MAX_LATE_BYTES; i++) {
+      try {
+        await this.#transport.read(1, this.#commandResetMs);
+      } catch (error) {
+        if (!(error instanceof TimeoutError)) {
+          throw error;
+        }
+
+        this.#resyncNeeded = false;
+
+        return;
+      }
+    }
+
+    throw new ProtocolError('ECU did not go quiet after a failed command');
   }
 
   async #sendEchoed(byte: number): Promise<void> {

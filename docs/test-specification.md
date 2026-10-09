@@ -11,7 +11,7 @@ Section numbers (§) are referenced from the header comment of each test file.
 - **Public API only.** Tests import from `src/index.ts`, never from internal modules (`protocol/`, `decoders/`, `queue.ts`, `bytes.ts`), and act as a user would: through `Ecu`, `SimulatedTransport` and `WebSerialTransport`. Decoder boundary values are tested through the matching `Ecu` getter by planting bytes in the simulated memory. Shared helpers live in `src/test-support/`. If a branch cannot be reached through the public API, delete it instead of testing it directly.
 - **Wire-level assertions** use `SimulatedTransport`'s write log, so tests can assert the exact bytes sent.
 - **Surface mapping.** `c14cux_foo(info, &out)` becomes `ecu.foo(): Promise<Out>`; a `false` return becomes a rejected promise (`TimeoutError`, `ProtocolError`, `InvalidReadingError`, `ReadCancelledError`, `NotConnectedError`). The `c14cux_` prefix is dropped and names are camelCase; `c14cux_init`/`cleanup` are the constructor and `disconnect`. `connect` takes no device path or baud rate, because those belong to the `Transport` (`WebSerialTransport` is given the `SerialPort` and optional baud).
-- **Divergences from the C library** are deliberate, minimal, and each has a test marked "deliberate divergence". They exist only where C leaves behaviour undefined (division by zero, `NaN` from `sqrt`, a function with no return statement), where C reads the wrong data (the coarse-address cache, §2.3), or to avoid stale state: the ROM revision and voltage coefficients are forgotten on `disconnect`, so reconnecting to a different ECU is safe. v1 adds nothing to the C library's feature set.
+- **Divergences from the C library** are deliberate, minimal, and each has a test marked "deliberate divergence". They exist only where C leaves behaviour undefined (division by zero, `NaN` from `sqrt`, a function with no return statement), where C reads the wrong data (the coarse-address cache, §2.3), to keep the link in step after a failed command (§2.4), or to avoid stale state: the ROM revision and voltage coefficients are forgotten on `disconnect`, so reconnecting to a different ECU is safe. v1 adds nothing to the C library's feature set.
 - Addresses and constants are taken from `comm14cux.h`. All multi-byte ECU values are big-endian.
 
 ## Capability map
@@ -65,6 +65,10 @@ After the coarse address, send `0xC0 | (addr & 0x3F)`. The ECU does not echo thi
 
 Four bytes, each echoed: coarse address (code 0), `0x80 | (addr & 0x3F)`, value.
 
+The ECU stores the value as soon as it receives it, so a write that fails on the value's echo (lost or garbled) may still have been stored.
+
+**Deliberate divergence:** after any failed read or write, the next command first waits until the line has been quiet for `commandResetMs` (default 500 ms), discarding late bytes. If a command fails part-way, the ECU may still be waiting for the rest of it. After a write command whose echo was garbled, it would store the next byte it receives, which is the first byte of the next command, at the target address. The firmware drops a half-received command after 256 passes of its main loop with nothing received (`$00E7` in `serialPort.asm`), so waiting long enough brings the link back in step. libcomm14cux sends the next command straight away. If bytes keep arriving for more than a 512-byte reply's worth, the next command fails with `ProtocolError`. A cancelled read does not trigger the wait, as the ECU is idle between chunks.
+
 ## 3. CommandQueue
 
 libcomm14cux holds a mutex for the duration of each public call. The queue gives the same guarantee: one task at a time, FIFO, and a rejection affects only its own caller. `disconnect` waits for an operation in progress.
@@ -73,7 +77,7 @@ libcomm14cux holds a mutex for the duration of each public call. The queue gives
 
 ### 4.1 SimulatedTransport
 
-A behavioural model of the ECU side of the wire, backed by a 64 KiB image. It must be faithful enough that the protocol tests are meaningful: echoes on coarse-address and write bytes, no echo on the read command, correct streaming for every length code, and fault-injection switches (corrupt echo, go silent, fail write, and fail memory writes after a given number succeed, by dropping or corrupting the write command's echo while reads keep working).
+A behavioural model of the ECU side of the wire, backed by a 64 KiB image. It must be faithful enough that the protocol tests are meaningful: echoes on coarse-address and write bytes, no echo on the read command, correct streaming for every length code, and fault-injection switches (corrupt echo, go silent, fail write, limit streamed bytes, and fail memory writes after a given number succeed while reads keep working). A failed memory write goes wrong at one of four points: the write command never arrives, its echo is garbled (the ECU then waits for the value), or the value is stored but its echo is lost or garbled. Like the firmware, it drops a half-received command after `commandTimeoutMs` (250 ms) with nothing received; a read that times out counts as that much silence.
 
 ### 4.2 WebSerialTransport
 
@@ -186,8 +190,7 @@ Every public `Ecu` call is queued (the C library locks only inside `readMem`/`wr
 
 ### 7.1 Known issues
 
-- **A late reply knocks the link out of step.** If the ECU answers after the read timeout, its late bytes stay in the receive buffer and are read as the answer to the next command. Every later call then fails with `ProtocolError` until the application reconnects. libcomm14cux has the same weakness: it flushes the port only when connecting. Tracked by an `it.todo` in `resilience.acceptance.test.ts`.
-- **`SimulatedTransport` has no command timeout.** The real firmware drops a half-received command after a period of silence (the `$00E7` counter in `serialPort.asm`) but keeps the latched address. The simulator waits forever, so after a failed exchange it can take the next command's first byte as the end of the old one. The resilience tests therefore allow a few retries after a fault, as an application would, instead of asserting how many calls fail.
+- **The firmware's command timeout is estimated.** The ECU drops a half-received command after 256 passes of its main loop (the `$00E7` counter in `serialPort.asm`). How long that takes is not documented and grows with engine speed. `commandResetMs` defaults to 500 ms and `SimulatedTransport.commandTimeoutMs` to 250 ms. Both should be checked against a real ECU. The resilience tests still allow a few retries after a fault, as an application would.
 
 ## Not covered
 
