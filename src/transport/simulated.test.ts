@@ -135,6 +135,116 @@ describe('SimulatedTransport', () => {
     await expect(t.write(bytes(1))).rejects.toThrow('Simulated write failure');
   });
 
+  it('can let some memory writes succeed, then drop later write commands without echo', async () => {
+    const t = await opened();
+
+    t.failMemoryWritesAfter = 1;
+    await t.write(bytes(0x00, 0x00, 0x80, 0x11));
+    await t.read(4, 1);
+    await t.write(bytes(0x00, 0x00, 0x81));
+
+    // Only the two coarse-address bytes are echoed.
+    await expect(t.read(3, 1)).rejects.toThrow(TimeoutError);
+    expect(t.failMemoryWritesAfter).toBe(1);
+
+    // Reads still work, and the dropped write left memory unchanged.
+    await t.write(bytes(0x01 << 2, 0x00, 0xc0));
+    expect([...(await t.read(4, 1))]).toEqual([0x04, 0x00, 0x11, 0x00]);
+  });
+
+  it('starts counting memory writes again when the limit is set', async () => {
+    const t = await opened();
+
+    await t.write(bytes(0x00, 0x00, 0x80, 0x11));
+    await t.read(4, 1);
+    t.failMemoryWritesAfter = 1;
+    await t.write(bytes(0x00, 0x00, 0x81, 0x22));
+
+    expect([...(await t.read(4, 1))]).toEqual([0x00, 0x00, 0x81, 0x22]);
+    expect(t.memory[1]).toBe(0x22);
+  });
+
+  it('can garble the echo of a write command, then store whatever comes next', async () => {
+    const t = await opened();
+
+    t.memoryWriteFault = 'commandEchoCorrupted';
+    t.failMemoryWritesAfter = 0;
+    await t.write(bytes(0x00, 0x00, 0x80));
+
+    expect([...(await t.read(3, 1))]).toEqual([0x00, 0x00, 0x7f]);
+
+    // Still waiting for the value: the next byte is stored and echoed.
+    await t.write(bytes(0x04));
+    expect([...(await t.read(1, 1))]).toEqual([0x04]);
+    expect(t.memory[0]).toBe(0x04);
+  });
+
+  it('can store a value but lose its echo', async () => {
+    const t = await opened();
+
+    t.memoryWriteFault = 'valueEchoLost';
+    t.failMemoryWritesAfter = 0;
+    await t.write(bytes(0x00, 0x00, 0x80, 0x11));
+
+    await expect(t.read(4, 1)).rejects.toThrow(TimeoutError);
+    expect(t.memory[0]).toBe(0x11);
+  });
+
+  it('can store a value but garble its echo', async () => {
+    const t = await opened();
+
+    t.memoryWriteFault = 'valueEchoCorrupted';
+    t.failMemoryWritesAfter = 0;
+    await t.write(bytes(0x00, 0x00, 0x80, 0x11));
+
+    expect([...(await t.read(4, 1))]).toEqual([0x00, 0x00, 0x80, 0xee]);
+    expect(t.memory[0]).toBe(0x11);
+  });
+
+  it('drops a half-received command after a read times out for commandTimeoutMs', async () => {
+    const t = await opened();
+
+    t.memory[0] = 0x5a;
+    await t.write(bytes(0x00, 0x00, 0x80));
+    await t.read(3, 1);
+    await expect(t.read(1, t.commandTimeoutMs)).rejects.toThrow(TimeoutError);
+
+    // Taken as a new coarse address byte, not as the value.
+    await t.write(bytes(0x00));
+    expect([...(await t.read(1, 1))]).toEqual([0x00]);
+    expect(t.memory[0]).toBe(0x5a);
+  });
+
+  it('keeps a half-received command through a shorter silence', async () => {
+    const t = await opened();
+
+    await t.write(bytes(0x00, 0x00, 0x80));
+    await t.read(3, 1);
+    await expect(t.read(1, t.commandTimeoutMs / 2)).rejects.toThrow(
+      TimeoutError,
+    );
+    await t.write(bytes(0x11));
+
+    expect(t.memory[0]).toBe(0x11);
+  });
+
+  it('drops a half-received command after commandTimeoutMs of real time', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+
+    try {
+      const t = await opened();
+
+      await t.write(bytes(0x00, 0x00, 0x80));
+      await t.read(3, 1);
+      vi.advanceTimersByTime(t.commandTimeoutMs);
+      await t.write(bytes(0x11));
+
+      expect(t.memory[0]).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('can limit streamed bytes', async () => {
     const t = await opened();
 

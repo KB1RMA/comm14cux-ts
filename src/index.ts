@@ -6,6 +6,7 @@ export * from './constants.js';
 export * from './errors.js';
 export type { Transport } from './transport/types.js';
 export { SimulatedTransport } from './transport/simulated.js';
+export type { MemoryWriteFault } from './transport/simulated.js';
 export {
   WebSerialTransport,
   type WebSerialTransportOptions,

@@ -129,11 +129,32 @@ describe('noisy line', () => {
     expect(await withRetries(() => ecu.getCoolantTemp(), 3)).toBe(190);
   });
 
-  // Known issue: after a timeout, the late reply is still in the receive
-  // buffer and is read as the answer to the next command. Every later call
-  // fails with ProtocolError until the application reconnects. libcomm14cux
-  // has the same weakness (it flushes the port only when connecting).
-  it.todo('recovers after one reply arrives just too late');
+  it('recovers after one reply arrives just too late', async () => {
+    const { ecu, port } = await running();
+
+    port.delayNextReply(150);
+
+    await expect(settle(ecu.getEngineRPM())).rejects.toThrow(TimeoutError);
+    // The late echo is discarded, not read as the answer to the next command.
+    expect(await settle(readDashboard(ecu))).toEqual(
+      approximately(warmIdle.expected),
+    );
+  });
+
+  it('does not store the next command as the value of a write whose echo was garbled', async () => {
+    const { ecu, simulator } = await running();
+
+    simulator.memoryWriteFault = 'commandEchoCorrupted';
+    simulator.failMemoryWritesAfter = 0;
+
+    await expect(settle(ecu.writeMem(0x0075, 20))).rejects.toThrow(
+      ProtocolError,
+    );
+    expect(await settle(readDashboard(ecu))).toEqual(
+      approximately(warmIdle.expected),
+    );
+    expect(simulator.memory[0x0075]).toBe(0);
+  });
 });
 
 describe('USB adapter latency', () => {

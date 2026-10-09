@@ -10,6 +10,31 @@ const MEMORY_SIZE = 0x10000;
 
 type State = 'idle' | 'coarse2' | 'writeValue';
 
+/**
+ * Where a memory write injected by {@link SimulatedTransport.failMemoryWritesAfter}
+ * goes wrong:
+ *
+ * - `'commandLost'`: the write command never reaches the ECU. No echo, and
+ *   nothing is stored.
+ * - `'commandEchoCorrupted'`: the ECU takes the write command, but its echo
+ *   is garbled on the way back. The ECU then waits for the value byte.
+ * - `'valueEchoLost'`: the ECU stores the value, but its echo is lost.
+ * - `'valueEchoCorrupted'`: the ECU stores the value, but its echo is garbled
+ *   on the way back.
+ */
+export type MemoryWriteFault =
+  | 'commandLost'
+  | 'commandEchoCorrupted'
+  | 'valueEchoLost'
+  | 'valueEchoCorrupted';
+
+/**
+ * How long the simulated ECU waits, with nothing received, before it drops a
+ * half-received command. The real firmware does this after 256 passes of its
+ * main loop; the time that takes is not documented and varies with load.
+ */
+const SIMULATED_COMMAND_TIMEOUT_MS = 250;
+
 function lengthFromCode(code: number): number | undefined {
   if (code <= 0x0f) {
     return code + 1;
@@ -45,6 +70,18 @@ export class SimulatedTransport implements Transport {
   silent = false;
   /** Fault injection: reject every write. */
   failWrites = false;
+  /**
+   * Fault injection: where a write failed by
+   * {@link SimulatedTransport.failMemoryWritesAfter} goes wrong. Defaults to
+   * `'commandLost'`.
+   */
+  memoryWriteFault: MemoryWriteFault = 'commandLost';
+  /**
+   * How long the ECU waits, with nothing received, before it drops a
+   * half-received command, in milliseconds. A read that times out counts as
+   * that much silence.
+   */
+  commandTimeoutMs = SIMULATED_COMMAND_TIMEOUT_MS;
   /** Fault injection: stream at most this many bytes per read command. */
   streamLimit: number | undefined = undefined;
 
@@ -56,6 +93,32 @@ export class SimulatedTransport implements Transport {
   #latched = false;
   #lengthCode = 0;
   #writeAddr = 0;
+  #failMemoryWritesAfter: number | undefined = undefined;
+  #memoryWritesDone = 0;
+  #failingWrite = false;
+  #lastByteAt = 0;
+  #quietMs = 0;
+
+  /**
+   * Fault injection: let this many memory writes succeed, then fail every
+   * later one, while reads keep working. `undefined` (the default) never
+   * fails; `0` fails the first. Setting it starts the count again.
+   *
+   * @returns The number of memory writes allowed to succeed.
+   */
+  get failMemoryWritesAfter(): number | undefined {
+    return this.#failMemoryWritesAfter;
+  }
+
+  /**
+   * Sets the memory-write fault limit and starts the count again.
+   *
+   * @param count - Memory writes to allow before failing, or `undefined` for none.
+   */
+  set failMemoryWritesAfter(count: number | undefined) {
+    this.#failMemoryWritesAfter = count;
+    this.#memoryWritesDone = 0;
+  }
 
   /**
    * Whether the transport is open.
@@ -134,18 +197,20 @@ export class SimulatedTransport implements Transport {
    * Takes bytes from the simulated ECU's reply.
    *
    * @param length - Number of bytes wanted.
-   * @param _timeoutMs - Ignored; the simulation answers immediately.
+   * @param timeoutMs - The simulation answers at once, but a read that times
+   * out counts as this much silence on the line.
    * @returns Exactly `length` bytes.
    * @throws {@link TimeoutError} if the ECU has not produced that many bytes.
    * @throws {@link NotConnectedError} if the transport is closed.
    */
-  read(length: number, _timeoutMs: number): Promise<Uint8Array> {
+  read(length: number, timeoutMs: number): Promise<Uint8Array> {
     if (!this.#open) {
       return Promise.reject(new NotConnectedError('Transport is not open'));
     }
 
     if (this.#output.length < length) {
       this.#output = [];
+      this.#quietMs += timeoutMs;
 
       return Promise.reject(new TimeoutError('Simulated ECU is silent'));
     }
@@ -153,7 +218,7 @@ export class SimulatedTransport implements Transport {
     return Promise.resolve(Uint8Array.from(this.#output.splice(0, length)));
   }
 
-  #echo(byte: number): void {
+  #echo(byte: number, garbled = false): void {
     if (this.silent) {
       return;
     }
@@ -162,14 +227,35 @@ export class SimulatedTransport implements Transport {
       this.corruptNextEcho = false;
       this.#output.push(byte ^ 0xff);
     } else {
-      this.#output.push(byte);
+      this.#output.push(garbled ? byte ^ 0xff : byte);
     }
   }
 
   #receive(byte: number): void {
+    const now = Date.now();
+
+    // Like the firmware, drop a half-received command after a long enough
+    // silence. The address already latched is kept.
+    if (
+      this.#state !== 'idle' &&
+      now - this.#lastByteAt + this.#quietMs >= this.commandTimeoutMs
+    ) {
+      this.#state = 'idle';
+    }
+
+    this.#lastByteAt = now;
+    this.#quietMs = 0;
+
     if (this.#state === 'writeValue') {
       this.memory[this.#writeAddr] = byte;
-      this.#echo(byte);
+
+      if (!this.#failingWrite) {
+        this.#memoryWritesDone += 1;
+        this.#echo(byte);
+      } else if (this.memoryWriteFault !== 'valueEchoLost') {
+        this.#echo(byte, this.memoryWriteFault === 'valueEchoCorrupted');
+      }
+
       this.#state = 'idle';
       this.#latched = false;
 
@@ -196,10 +282,26 @@ export class SimulatedTransport implements Transport {
     } else if ((byte & 0xc0) === 0xc0) {
       this.#streamRead(this.#coarse | (byte & 0x3f));
     } else {
+      this.#failingWrite = this.#memoryWriteFails();
+
+      if (this.#failingWrite && this.memoryWriteFault === 'commandLost') {
+        return;
+      }
+
       this.#writeAddr = this.#coarse | (byte & 0x3f);
-      this.#echo(byte);
+      this.#echo(
+        byte,
+        this.#failingWrite && this.memoryWriteFault === 'commandEchoCorrupted',
+      );
       this.#state = 'writeValue';
     }
+  }
+
+  #memoryWriteFails(): boolean {
+    return (
+      this.#failMemoryWritesAfter !== undefined &&
+      this.#memoryWritesDone >= this.#failMemoryWritesAfter
+    );
   }
 
   #streamRead(address: number): void {

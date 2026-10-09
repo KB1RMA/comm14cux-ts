@@ -99,6 +99,8 @@ All ECU access is memory reads and writes:
 - A single read returns 1–16, 80, 100, 400 or 512 bytes. Longer reads are split into chunks.
 - When the next read uses the same length and falls in the same 64-byte block as the last coarse address, the coarse-address step is skipped. libcomm14cux compares a 64-byte window starting at the last (unaligned) address instead, which can read from the wrong block; this library deliberately does not.
 - Any echo mismatch or timeout fails the operation and clears the coarse-address cache.
+- After a failure the ECU may still be waiting for the rest of a command, and would store the next byte it receives if that command was a write. So the next operation first waits until the line has been quiet for `commandResetMs` (an `Ecu` option, default 500 ms), discarding any late bytes, so that the ECU drops the half-received command. libcomm14cux does not do this; this library deliberately does.
+- A write that fails may still have reached the ECU: the value can be stored even though its echo was lost or garbled. Treat a failed write as "may have been written".
 - Long reads (such as a ROM dump) can be stopped with `ecu.cancelRead()`, as in libcomm14cux.
 
 ### CommandQueue
