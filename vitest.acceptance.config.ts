@@ -14,7 +14,7 @@ export default defineConfig({
     alias: testDist
       ? {}
       : {
-          'comm14cux-ts': fileURLToPath(
+          '@kb1rma/libcomm14cux-ts': fileURLToPath(
             new URL('./src/index.ts', import.meta.url),
           ),
         },

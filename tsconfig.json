@@ -24,7 +24,7 @@
 
 		"skipLibCheck": true,
 		"paths": {
-			"comm14cux-ts": ["./src/index.ts"]
+			"@kb1rma/libcomm14cux-ts": ["./src/index.ts"]
 		},
 		"noEmit": true,
 		"incremental": true,

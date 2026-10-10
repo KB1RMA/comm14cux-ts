@@ -5,7 +5,7 @@
 
 // Journey: a workshop session. Read the stored faults, clear them, and
 // exercise the fuel pump and idle air control valve.
-import type { FaultCodeName } from 'comm14cux-ts';
+import type { FaultCodeName } from '@kb1rma/libcomm14cux-ts';
 import {
   allFaultFixtures,
   keyOnEngineOff,

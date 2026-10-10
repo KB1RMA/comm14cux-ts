@@ -8,7 +8,7 @@ import {
   NotConnectedError,
   TimeoutError,
   WebSerialTransport,
-} from 'comm14cux-ts';
+} from '@kb1rma/libcomm14cux-ts';
 import { revCRom, virtualEcu, warmIdle } from './fixtures/index.js';
 import { bench } from './support/bench.js';
 import { settle, timed, useVirtualClock } from './support/clock.js';

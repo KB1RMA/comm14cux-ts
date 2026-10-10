@@ -5,7 +5,7 @@
 
 // Journey: identify an unknown ECU and read its calibration — tune number,
 // battery voltage, fuel maps and RPM table — then save a copy of its ROM.
-import { DataSize, ReadCancelledError } from 'comm14cux-ts';
+import { DataSize, ReadCancelledError } from '@kb1rma/libcomm14cux-ts';
 import {
   allRoms,
   fuelMapAdjustment,

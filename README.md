@@ -1,4 +1,4 @@
-# comm14cux-ts
+# libcomm14cux-ts
 
 TypeScript library for communicating with the Lucas 14CUX engine ECU over its serial diagnostic port, using the Web Serial API.
 
@@ -12,10 +12,16 @@ The existing tool for this is [RoverGauge](https://github.com/colinbourassa/rove
 
 This project is not affiliated with or endorsed by the author of libcomm14cux or RoverGauge.
 
+## Installation
+
+```sh
+npm install @kb1rma/libcomm14cux-ts
+```
+
 ## Usage
 
 ```ts
-import { Ecu, WebSerialTransport, AirflowType } from 'comm14cux-ts';
+import { Ecu, WebSerialTransport, AirflowType } from '@kb1rma/libcomm14cux-ts';
 
 const port = await navigator.serial.requestPort();
 const ecu = new Ecu(new WebSerialTransport(port));
@@ -137,6 +143,26 @@ The protocol and decoding logic are derived from [libcomm14cux](https://github.c
 This project is therefore licensed under the **GNU General Public License v3.0 only** (`GPL-3.0-only`). Any application that includes this library must also be distributed under GPL-3.0-compatible terms, with its source code available.
 
 Parts of this project were written with the help of an AI assistant. The original libcomm14cux and RoverGauge projects do not accept AI-generated contributions, so nothing from this repository will be submitted to them.
+
+## Verifying a release
+
+Every version is published from GitHub Actions with npm trusted publishing, and npm records a signed [SLSA provenance](https://slsa.dev/) statement for it (the "Built and signed on GitHub Actions" badge on the package page). In a project that depends on the package, `npm audit signatures` checks the registry signatures and the provenance.
+
+Each stable release also has three attestations signed with Sigstore and stored on this repository, all about the exact tarball published to npm:
+
+- SLSA build provenance: which workflow, commit and runner built it
+- a CycloneDX SBOM of its runtime dependencies
+- an in-toto test result listing the unit and acceptance tests that passed against it
+
+Download the tarball from the [release](https://github.com/KB1RMA/libcomm14cux-ts/releases) (or with `npm pack @kb1rma/libcomm14cux-ts@<version>`) and verify it with the [GitHub CLI](https://cli.github.com/):
+
+```sh
+gh attestation verify kb1rma-libcomm14cux-ts-<version>.tgz --repo KB1RMA/libcomm14cux-ts
+gh attestation verify kb1rma-libcomm14cux-ts-<version>.tgz --repo KB1RMA/libcomm14cux-ts \
+  --predicate-type https://in-toto.io/attestation/test-result/v0.1 --format json
+```
+
+The release also carries each attestation as a `.sigstore.json` bundle, so it can be checked offline with `--bundle`. Beta versions published under the `next` dist-tag have the npm provenance only.
 
 ## Development
 

@@ -11,7 +11,7 @@
 // Each fixture carries its expected readings as literals, worked out by hand
 // from docs/test-specification.md §5.8–5.10 and §5.14, so the tests do not
 // rely on the library to compute their own answers.
-import { DataOffsetRev, DataSize } from 'comm14cux-ts';
+import { DataOffsetRev, DataSize } from '@kb1rma/libcomm14cux-ts';
 
 const ROM_BASE = 0xc000;
 
