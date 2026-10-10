@@ -49,6 +49,34 @@ describe('Ecu connection', () => {
     expect(ecu.isConnected()).toBe(false);
   });
 
+  it('reads with the libcomm14cux silence timeout of 100 ms by default', async () => {
+    const transport = new SimulatedTransport();
+    const read = vi.spyOn(transport, 'read');
+    const ecu = new Ecu(transport);
+
+    await ecu.connect();
+    await ecu.readMem(0, 1);
+
+    expect(read).toHaveBeenCalled();
+    expect(new Set(read.mock.calls.map(([, timeoutMs]) => timeoutMs))).toEqual(
+      new Set([100]),
+    );
+  });
+
+  it('passes readTimeoutMs to every transport read', async () => {
+    const transport = new SimulatedTransport();
+    const read = vi.spyOn(transport, 'read');
+    const ecu = new Ecu(transport, { readTimeoutMs: 7 });
+
+    await ecu.connect();
+    await ecu.readMem(0, 1);
+
+    expect(read).toHaveBeenCalled();
+    expect(new Set(read.mock.calls.map(([, timeoutMs]) => timeoutMs))).toEqual(
+      new Set([7]),
+    );
+  });
+
   it('disconnects by closing the transport, and is a no-op when not connected', async () => {
     const { transport, ecu } = await connected();
     const close = vi.spyOn(transport, 'close');
@@ -62,13 +90,20 @@ describe('Ecu connection', () => {
     await expect(ecu.getRoadSpeed()).rejects.toThrow(NotConnectedError);
   });
 
-  it('stays connected when the transport cannot close', async () => {
+  it('stays connected when the transport cannot close, and retries on the next disconnect', async () => {
     const { transport, ecu } = await connected();
-
-    vi.spyOn(transport, 'close').mockRejectedValueOnce(new Error('busy'));
+    const close = vi
+      .spyOn(transport, 'close')
+      .mockRejectedValueOnce(new Error('busy'));
 
     await expect(ecu.disconnect()).rejects.toThrow('busy');
     expect(ecu.isConnected()).toBe(true);
+
+    await ecu.disconnect();
+
+    expect(close).toHaveBeenCalledTimes(2);
+    expect(ecu.isConnected()).toBe(false);
+    expect(transport.isOpen).toBe(false);
   });
 
   it('waits for an operation in progress before disconnecting', async () => {

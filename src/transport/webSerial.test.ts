@@ -99,6 +99,18 @@ describe('WebSerialTransport', () => {
         NotConnectedError,
       );
     });
+
+    it('does not open the port a second time when it exposed no streams', async () => {
+      const fake = fakePort({ noStreams: true });
+      const transport = new WebSerialTransport(fake.asSerialPort);
+
+      await transport.open();
+      await transport.open();
+      await transport.close();
+
+      expect(fake.port.open).toHaveBeenCalledTimes(1);
+      expect(fake.port.close).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('write', () => {
@@ -240,6 +252,42 @@ describe('WebSerialTransport', () => {
       await transport.close();
 
       await expect(transport.read(1, 5)).rejects.toThrow(NotConnectedError);
+    });
+
+    it('retries SerialPort.close() on the next call after it rejected', async () => {
+      const fake = fakePort();
+      const transport = new WebSerialTransport(fake.asSerialPort);
+
+      await transport.open();
+      fake.port.close.mockRejectedValueOnce(new TypeError('busy'));
+
+      await expect(transport.close()).rejects.toThrow('busy');
+      // The streams were released, so the port can close once it is able to.
+      expect(fake.port.readable?.locked).toBe(false);
+      expect(fake.port.writable?.locked).toBe(false);
+      await expect(transport.write(Uint8Array.of(1))).rejects.toThrow(
+        NotConnectedError,
+      );
+
+      await transport.close();
+
+      expect(fake.port.close).toHaveBeenCalledTimes(2);
+    });
+
+    it('reuses a port that failed to close instead of opening it again', async () => {
+      const fake = fakePort();
+      const transport = new WebSerialTransport(fake.asSerialPort);
+
+      await transport.open();
+      fake.port.close.mockRejectedValueOnce(new TypeError('busy'));
+      await expect(transport.close()).rejects.toThrow('busy');
+
+      await transport.open();
+
+      // In a browser a second SerialPort.open() would throw InvalidStateError.
+      expect(fake.port.open).toHaveBeenCalledTimes(1);
+      await transport.write(Uint8Array.of(0x5a));
+      expect(fake.written).toEqual([0x5a]);
     });
   });
 });

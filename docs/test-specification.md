@@ -79,6 +79,8 @@ A behavioural model of the ECU side of the wire, backed by a 64 KiB image. It mu
 
 Tested against a fake `SerialPort`. Opens at 7812 baud, 8N1, no flow control (15625 optional). Read resolves with exactly N bytes or rejects with `TimeoutError` after 100 ms of silence (the interval timeout libcomm14cux configures); surplus bytes are retained for the next read.
 
+Open and close are idempotent: `open()` calls `SerialPort.open()` once, even when the port exposed no streams. `close()` releases the stream locks before `SerialPort.close()`; if that rejects, the transport still counts as open, so the next `close()` retries it instead of silently leaving the port open, and `open()` does not call `SerialPort.open()` a second time but takes the stream locks back, so the transport is usable again.
+
 ## 5. Decoders
 
 Each decoder lists the memory it reads, the formula, and boundary values.
@@ -183,6 +185,7 @@ Every public `Ecu` call is queued (the C library locks only inside `readMem`/`wr
 | Identifying an ECU, reading its calibration, dumping and cancelling the ROM, swapping ECUs | `romIdentification.acceptance.test.ts` |
 | Reading and clearing faults; fuel pump and idle air control | `workshop.acceptance.test.ts` |
 | Ignition off, cable pulled, noisy line, slow adapters, overlapping operations | `resilience.acceptance.test.ts` |
+| Published API surface: export names, `Ecu` methods, error hierarchy, wire constants and exported types, pinned as literals | `publicApi.acceptance.test.ts` |
 
 ### 7.1 Known issues
 
