@@ -79,7 +79,7 @@ A behavioural model of the ECU side of the wire, backed by a 64 KiB image. It mu
 
 Tested against a fake `SerialPort`. Opens at 7812 baud, 8N1, no flow control (15625 optional). Read resolves with exactly N bytes or rejects with `TimeoutError` after 100 ms of silence (the interval timeout libcomm14cux configures); surplus bytes are retained for the next read.
 
-Open and close are idempotent: `open()` calls `SerialPort.open()` once, even when the port exposed no streams. `close()` releases the stream locks before `SerialPort.close()`; if that rejects, the transport still counts as open, so the next `close()` retries it instead of silently leaving the port open, and `open()` does not call `SerialPort.open()` a second time.
+Open and close are idempotent: `open()` calls `SerialPort.open()` once, even when the port exposed no streams. `close()` releases the stream locks before `SerialPort.close()`; if that rejects, the transport still counts as open, so the next `close()` retries it instead of silently leaving the port open, and `open()` does not call `SerialPort.open()` a second time but takes the stream locks back, so the transport is usable again.
 
 ## 5. Decoders
 

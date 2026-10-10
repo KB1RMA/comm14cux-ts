@@ -5,7 +5,7 @@
 // names and types it imports to stay put from one release to the next. Every
 // list below is a literal so that an accidental rename, removal or new export
 // has to be acknowledged here.
-import * as api from 'comm14cux-ts';
+import * as api from '@kb1rma/libcomm14cux-ts';
 import type {
   Bank,
   Ecu,
@@ -19,7 +19,7 @@ import type {
   TuneRevision,
   Version,
   WebSerialTransportOptions,
-} from 'comm14cux-ts';
+} from '@kb1rma/libcomm14cux-ts';
 
 const prototypeMethods = (ctor: abstract new (...args: never[]) => unknown) =>
   Object.getOwnPropertyNames(ctor.prototype)
@@ -60,7 +60,7 @@ describe('public API surface', () => {
     ]);
   });
 
-  it('keeps every Ecu method, one per libcomm14cux function', () => {
+  it('keeps every Ecu method', () => {
     expect(prototypeMethods(api.Ecu)).toEqual([
       'cancelRead',
       'clearFaultCodes',

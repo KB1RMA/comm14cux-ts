@@ -40,22 +40,25 @@ export class WebSerialTransport implements Transport {
   /**
    * Opens the port at the configured baud rate, 8N1 with no flow control.
    * Does nothing if already open.
+   *
+   * If an earlier {@link WebSerialTransport.close} released the streams but
+   * the port refused to close, the port is not opened again; the stream locks
+   * are taken back so the transport is usable.
    */
   async open(): Promise<void> {
-    if (this.#portOpen) {
-      return;
+    if (!this.#portOpen) {
+      await this.#port.open({
+        baudRate: this.#baudRate,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        flowControl: 'none',
+      });
+      this.#portOpen = true;
     }
 
-    await this.#port.open({
-      baudRate: this.#baudRate,
-      dataBits: 8,
-      stopBits: 1,
-      parity: 'none',
-      flowControl: 'none',
-    });
-    this.#portOpen = true;
-    this.#reader = this.#port.readable?.getReader();
-    this.#writer = this.#port.writable?.getWriter();
+    this.#reader ??= this.#port.readable?.getReader();
+    this.#writer ??= this.#port.writable?.getWriter();
   }
 
   /**

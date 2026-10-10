@@ -58,8 +58,8 @@ describe('Ecu connection', () => {
     await ecu.readMem(0, 1);
 
     expect(read).toHaveBeenCalled();
-    expect(read.mock.calls.every(([, timeoutMs]) => timeoutMs === 100)).toBe(
-      true,
+    expect(new Set(read.mock.calls.map(([, timeoutMs]) => timeoutMs))).toEqual(
+      new Set([100]),
     );
   });
 
@@ -72,8 +72,8 @@ describe('Ecu connection', () => {
     await ecu.readMem(0, 1);
 
     expect(read).toHaveBeenCalled();
-    expect(read.mock.calls.every(([, timeoutMs]) => timeoutMs === 7)).toBe(
-      true,
+    expect(new Set(read.mock.calls.map(([, timeoutMs]) => timeoutMs))).toEqual(
+      new Set([7]),
     );
   });
 
@@ -90,13 +90,20 @@ describe('Ecu connection', () => {
     await expect(ecu.getRoadSpeed()).rejects.toThrow(NotConnectedError);
   });
 
-  it('stays connected when the transport cannot close', async () => {
+  it('stays connected when the transport cannot close, and retries on the next disconnect', async () => {
     const { transport, ecu } = await connected();
-
-    vi.spyOn(transport, 'close').mockRejectedValueOnce(new Error('busy'));
+    const close = vi
+      .spyOn(transport, 'close')
+      .mockRejectedValueOnce(new Error('busy'));
 
     await expect(ecu.disconnect()).rejects.toThrow('busy');
     expect(ecu.isConnected()).toBe(true);
+
+    await ecu.disconnect();
+
+    expect(close).toHaveBeenCalledTimes(2);
+    expect(ecu.isConnected()).toBe(false);
+    expect(transport.isOpen).toBe(false);
   });
 
   it('waits for an operation in progress before disconnecting', async () => {

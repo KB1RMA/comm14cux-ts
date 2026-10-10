@@ -274,7 +274,7 @@ describe('WebSerialTransport', () => {
       expect(fake.port.close).toHaveBeenCalledTimes(2);
     });
 
-    it('does not try to reopen a port that failed to close', async () => {
+    it('reuses a port that failed to close instead of opening it again', async () => {
       const fake = fakePort();
       const transport = new WebSerialTransport(fake.asSerialPort);
 
@@ -286,6 +286,8 @@ describe('WebSerialTransport', () => {
 
       // In a browser a second SerialPort.open() would throw InvalidStateError.
       expect(fake.port.open).toHaveBeenCalledTimes(1);
+      await transport.write(Uint8Array.of(0x5a));
+      expect(fake.written).toEqual([0x5a]);
     });
   });
 });
